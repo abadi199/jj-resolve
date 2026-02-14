@@ -1,4 +1,5 @@
 const std = @import("std");
+const mem = std.mem;
 
 const Error = error{
     GenericError,
@@ -14,7 +15,7 @@ const State = enum {
     end_conflict,
 };
 
-pub fn parse(allocator: std.mem.Allocator, text: []const u8) !ParsedFile {
+pub fn parse(allocator: mem.Allocator, text: []const u8) !ParsedFile {
     var state: State = .no_conflict;
     var segments: std.ArrayList(Segment) = .empty;
     defer segments.deinit(allocator);
@@ -22,14 +23,14 @@ pub fn parse(allocator: std.mem.Allocator, text: []const u8) !ParsedFile {
     var text_list: std.ArrayList([]const u8) = .empty;
     defer text_list.deinit(allocator);
 
-    var iter = std.mem.splitSequence(u8, text, "\n");
+    var iter = mem.splitSequence(u8, text, "\n");
     var conflict: ?Conflict = null;
     while (iter.next()) |line| {
         std.debug.print("line: {s}\n", .{line});
         const marker = Marker.detect(line);
 
-        std.debug.print("state: {any}\n", .{state});
-        std.debug.print("marker: {any}\n", .{marker});
+        // std.debug.print("state: {any}\n", .{state});
+        // std.debug.print("marker: {any}\n", .{marker});
         switch (state) {
             .no_conflict => {
                 switch (marker) {
@@ -37,7 +38,9 @@ pub fn parse(allocator: std.mem.Allocator, text: []const u8) !ParsedFile {
                         state = .in_conflict_header;
                         // add text to segment
                         try segments.append(allocator, .{
-                            .text = try text_list.toOwnedSlice(allocator),
+                            .no_conflict = NoConflict{
+                                .lines = try text_list.toOwnedSlice(allocator),
+                            },
                         });
                         text_list = .empty;
 
@@ -89,7 +92,11 @@ pub fn parse(allocator: std.mem.Allocator, text: []const u8) !ParsedFile {
         .no_conflict,
         .end_conflict,
         => {
-            try segments.append(allocator, .{ .text = try text_list.toOwnedSlice(allocator) });
+            try segments.append(allocator, .{
+                .no_conflict = NoConflict{
+                    .lines = try text_list.toOwnedSlice(allocator),
+                },
+            });
         },
         .in_conflict_header,
         .in_diff_header,
@@ -99,7 +106,7 @@ pub fn parse(allocator: std.mem.Allocator, text: []const u8) !ParsedFile {
         => {},
     }
 
-    debugPrintSegments(&segments);
+    // debugPrintSegments(&segments);
     return ParsedFile{
         .segments = try segments.toOwnedSlice(allocator),
     };
@@ -117,6 +124,15 @@ test "parse without conflicts" {
     defer output.deinit(allocator);
 
     try std.testing.expectEqual(1, output.segments.len);
+    const segment = try output.segments[0].no_conflict.toString(allocator);
+    defer allocator.free(segment);
+    try std.testing.expectEqualStrings(
+        \\function before() {
+        \\  console.log("before test");
+        \\  console.log("before main");
+        \\  console.log("BEFORE TEST");
+        \\}
+    , segment);
 }
 
 test "parse file with text and conflict" {
@@ -135,6 +151,13 @@ test "parse file with text and conflict" {
     );
     defer output.deinit(allocator);
     try std.testing.expectEqual(3, output.segments.len);
+    const segment_1 = try output.segments[0].no_conflict.toString(allocator);
+    defer allocator.free(segment_1);
+    try std.testing.expectEqualStrings("function before() {", segment_1);
+
+    const segment_3 = try output.segments[2].no_conflict.toString(allocator);
+    defer allocator.free(segment_3);
+    try std.testing.expectEqualStrings("}", segment_3);
 }
 
 const Marker = enum {
@@ -143,10 +166,10 @@ const Marker = enum {
     none,
 
     fn detect(line: []const u8) Marker {
-        if (std.mem.startsWith(u8, line, "<<<<<<<")) {
+        if (mem.startsWith(u8, line, "<<<<<<<")) {
             return .conflict;
         }
-        if (std.mem.startsWith(u8, line, ">>>>>>>")) {
+        if (mem.startsWith(u8, line, ">>>>>>>")) {
             return .end_conflict;
         }
         return .none;
@@ -156,11 +179,11 @@ const Marker = enum {
 const ParsedFile = struct {
     segments: []const Segment,
 
-    fn deinit(self: *ParsedFile, allocator: std.mem.Allocator) void {
+    fn deinit(self: *ParsedFile, allocator: mem.Allocator) void {
         for (self.segments) |segment| {
             switch (segment) {
-                .text => |text| {
-                    allocator.free(text);
+                .no_conflict => |no_conflict| {
+                    allocator.free(no_conflict.lines);
                 },
                 .conflict => |conflict| {
                     // TODO
@@ -174,9 +197,59 @@ const ParsedFile = struct {
 };
 
 const Segment = union(enum) {
-    text: [][]const u8,
+    no_conflict: NoConflict,
     conflict: Conflict,
 };
+
+const NoConflict = struct {
+    lines: []const []const u8,
+
+    fn toString(self: NoConflict, allocator: mem.Allocator) ![]const u8 {
+        if (self.lines.len == 0) {
+            return "";
+        }
+
+        var total_len: usize = 0;
+        for (self.lines) |line| {
+            total_len += line.len;
+        }
+
+        // add space for new line, excluding last line
+        total_len += self.lines.len - 1;
+
+        var result = try allocator.alloc(u8, total_len);
+        var i: usize = 0;
+        std.debug.print("lines.len:{d}\n", .{self.lines.len});
+        for (self.lines, 0..) |line, line_num| {
+            // std.debug.print("line:{s}|i:{}|line_num:{d}|line.len:{d}\n", .{
+            //     line,
+            //     i,
+            //     line_num,
+            //     line.len,
+            // });
+            @memcpy(result[i..(i + line.len)], line);
+            i += line.len;
+
+            if (line_num < self.lines.len - 1) {
+                // append \n expect the last line
+                result[i] = '\n';
+                i += 1;
+            }
+        }
+
+        return result;
+    }
+};
+
+test "toString" {
+    const allocator = std.testing.allocator;
+    const input = [_][]const u8{ "a", "b", "c" };
+    const output = try NoConflict.toString(NoConflict{
+        .lines = input[0..],
+    }, allocator);
+    defer allocator.free(output);
+    try std.testing.expectEqualStrings("a\nb\nc", output);
+}
 
 // marker: <<<<<<<
 const Conflict = struct {
@@ -185,7 +258,7 @@ const Conflict = struct {
     markers: []const ConflictMarker,
 
     fn parseHeader(line: []const u8) !Conflict {
-        var it = std.mem.splitScalar(u8, line, ' ');
+        var it = mem.splitScalar(u8, line, ' ');
         _ = it.next();
         _ = it.next();
 
@@ -280,9 +353,9 @@ fn debugPrintSegments(segments: *const std.ArrayList(Segment)) void {
 
     for (segments.items, 0..) |segment, i| {
         switch (segment) {
-            .text => |lines| {
-                std.debug.print("  [{d}] text lines={d}\n", .{ i, lines.len });
-                for (lines, 0..) |line, j| {
+            .no_conflict => |no_conflict| {
+                std.debug.print("  [{d}] text lines={d}\n", .{ i, no_conflict.lines.len });
+                for (no_conflict.lines, 0..) |line, j| {
                     std.debug.print("    [{d}] {s}\n", .{ j, line });
                 }
             },
