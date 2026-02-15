@@ -146,8 +146,6 @@ pub fn parse(allocator: mem.Allocator, text: []const u8) !ParsedFile {
                                 .diff = try diff_parser.toDiff(allocator),
                             },
                         );
-                        temp_conflict.?.conflict_markers = try temp_conflict_markers.toOwnedSlice(allocator);
-                        std.debug.print("temp_conflict_markers:{any}", .{temp_conflict_markers});
                         try snapshot_parser.parse(allocator, line);
                     },
                     .conflict,
@@ -179,6 +177,18 @@ pub fn parse(allocator: mem.Allocator, text: []const u8) !ParsedFile {
                     .end_conflict => {
                         // end of conflict, add to segments
                         state = .end_conflict;
+                        const snapshot = try snapshot_parser.toSnapshot(allocator);
+                        try temp_conflict_markers.append(
+                            allocator,
+                            ConflictMarker{
+                                .snapshot = snapshot,
+                            },
+                        );
+
+                        if (temp_conflict == null) {
+                            return error.GenericError;
+                        }
+                        temp_conflict.?.conflict_markers = try temp_conflict_markers.toOwnedSlice(allocator);
                         try temp_segments.append(allocator, .{ .conflict = temp_conflict.? });
                     },
                     .diff => {},
@@ -186,6 +196,7 @@ pub fn parse(allocator: mem.Allocator, text: []const u8) !ParsedFile {
                     .snapshot => {},
                     .none => {
                         state = .in_snapshot;
+                        try snapshot_parser.parse(allocator, line);
                     },
                 }
             },
@@ -281,7 +292,15 @@ test "parse file with text and conflict" {
         } },
     }, diff);
 
-    // try std.testing.expectEqual(2, conflict.conflict_markers.len);
+    const snapshot = conflict.conflict_markers[1].snapshot;
+    try testing.expectEqualDeep(Snapshot{
+        .commit = Revision{
+            .changeID = "vsqszzzy",
+            .commitID = "af5bacc0",
+            .description = "c",
+        },
+        .lines = &[_][]const u8{"  console.log(\"BEFORE TEST\");"},
+    }, snapshot);
 
     const segment_3 = try output.segments[2].no_conflict.toString(allocator);
     defer allocator.free(segment_3);
@@ -569,6 +588,14 @@ const Snapshot = struct {
                 },
             }
         }
+        fn toSnapshot(self: *Parser, allocator: mem.Allocator) !Snapshot {
+            const lines = try self.lines.toOwnedSlice(allocator);
+            defer self.lines.deinit(allocator);
+            return Snapshot{
+                .commit = self.commit.?,
+                .lines = lines,
+            };
+        }
     };
 };
 
@@ -577,14 +604,6 @@ const Revision = struct {
     changeID: []const u8,
     commitID: []const u8,
     description: []const u8,
-
-    fn parseQuoted(line: []const u8) ![]const u8 {
-        const first = std.mem.indexOfScalar(u8, line, '"') orelse return error.GenericError;
-        const rest = line[(first + 1)..];
-        const second_rel = std.mem.indexOfScalar(u8, rest, '"') orelse return error.GenericError;
-
-        return rest[0..second_rel];
-    }
 
     fn parseLine1(line: []const u8) !Revision {
         //%%%%%%% diff from: ulopzqqq 6606ba58 "a"
@@ -638,12 +657,22 @@ const Revision = struct {
     }
 
     fn parseSnapshot(line: []const u8) !Revision {
-        // TODO
-        _ = line;
+        //+++++++ vsqszzzy af5bacc0 "c"
+        var it = mem.splitScalar(u8, line, ' ');
+        _ = it.next();
+
+        const changeID = it.next() orelse {
+            return error.GenericError;
+        };
+        const commitID = it.next() orelse {
+            return error.GenericError;
+        };
+
+        const description = try parseQuoted(line);
         return Revision{
-            .changeID = "",
-            .commitID = "",
-            .description = "",
+            .changeID = changeID,
+            .commitID = commitID,
+            .description = description,
         };
     }
 };
@@ -675,4 +704,12 @@ fn debugPrintSegments(segments: *const std.ArrayList(Segment)) void {
             },
         }
     }
+}
+
+fn parseQuoted(line: []const u8) ![]const u8 {
+    const first = std.mem.indexOfScalar(u8, line, '"') orelse return error.GenericError;
+    const rest = line[(first + 1)..];
+    const second_rel = std.mem.indexOfScalar(u8, rest, '"') orelse return error.GenericError;
+
+    return rest[0..second_rel];
 }
