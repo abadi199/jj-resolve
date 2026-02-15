@@ -3,11 +3,12 @@ const mem = std.mem;
 
 const Error = error{
     GenericError,
+    Todo,
 };
 
 const State = enum {
     no_conflict,
-    in_conflict_header,
+    in_conflict,
     in_diff_header,
     in_diff_body,
     in_snapshot_header,
@@ -20,53 +21,133 @@ pub fn parse(allocator: mem.Allocator, text: []const u8) !ParsedFile {
     var segments: std.ArrayList(Segment) = .empty;
     defer segments.deinit(allocator);
 
-    var text_list: std.ArrayList([]const u8) = .empty;
-    defer text_list.deinit(allocator);
+    // temporary data for no conflict lines
+    var temp_lines: std.ArrayList([]const u8) = .empty;
+    defer temp_lines.deinit(allocator);
+
+    // temporary data for conflict and markers
+    var temp_conflict: ?Conflict = null;
+    var temp_conflict_markers: std.ArrayList(ConflictMarker) = .empty;
+    defer temp_conflict_markers.deinit(allocator);
+
+    var temp_diff: Diff.Partial = Diff.Partial.new();
+    defer temp_diff.deinit(allocator);
 
     var iter = mem.splitSequence(u8, text, "\n");
-    var conflict: ?Conflict = null;
     while (iter.next()) |line| {
-        std.debug.print("line: {s}\n", .{line});
+        std.debug.print("############################\nline: {s}\n", .{line});
         const marker = Marker.detect(line);
 
-        // std.debug.print("state: {any}\n", .{state});
-        // std.debug.print("marker: {any}\n", .{marker});
+        std.debug.print("state: {any}\n", .{state});
+        std.debug.print("marker: {any}\n", .{marker});
         switch (state) {
             .no_conflict => {
                 switch (marker) {
                     .conflict => {
-                        state = .in_conflict_header;
+                        state = .in_conflict;
                         // add text to segment
                         try segments.append(allocator, .{
                             .no_conflict = NoConflict{
-                                .lines = try text_list.toOwnedSlice(allocator),
+                                .lines = try temp_lines.toOwnedSlice(allocator),
                             },
                         });
-                        text_list = .empty;
+                        temp_lines = .empty;
 
                         // capture conflict
-                        conflict = try Conflict.parseHeader(line);
+                        temp_conflict = try Conflict.parse(line);
                     },
                     .end_conflict => {
-                        return error.ParseError;
+                        return error.GenericError;
                     },
-                    .none => {
-                        try text_list.append(allocator, line);
+                    .none,
+                    .diff,
+                    .multi_line,
+                    => {
+                        try temp_lines.append(allocator, line);
                     },
                 }
             },
-            .in_conflict_header => {
+            .in_conflict => {
                 switch (marker) {
-                    .conflict => {
-                        return error.ParseError;
+                    .conflict,
+                    .end_conflict,
+                    => {
+                        return error.GenericError;
                     },
-                    .end_conflict => {
+                    .diff,
+                    .multi_line,
+                    => {
+                        state = .in_diff_header;
+                        try temp_diff.parse(line);
+                        // std.debug.print("diff: {any}\n", .{diff});
+                        // try markers.append(allocator, diff);
+                    },
+                    .none,
+                    => {
+                        // TODO
+                    },
+                }
+            },
+            .in_diff_header => {
+                switch (marker) {
+                    .diff,
+                    .conflict,
+                    .end_conflict,
+                    => {
                         // end of conflict, add to segments
                         state = .end_conflict;
-                        try segments.append(allocator, .{ .conflict = conflict.? });
+                        try segments.append(allocator, .{ .conflict = temp_conflict.? });
                     },
-                    .none => {
+                    .multi_line,
+                    => {
+                        state = .in_diff_header;
+                        try temp_diff.parse(line);
+                        // std.debug.print("diff: {any}\n", .{diff});
+                    },
+                    .none,
+                    => {
+                        state = .in_diff_body;
+                        // start capturing diff body
+                        try temp_diff.diff_lines.append(allocator, DiffLine.parse(line));
                         // TODO
+                    },
+                }
+            },
+            .in_diff_body => {
+                switch (marker) {
+                    .none,
+                    .multi_line,
+                    => {
+                        // more body
+                    },
+                    .diff,
+                    => {
+                        // new diff
+                        state = .in_diff_header;
+                        try temp_conflict_markers.append(
+                            allocator,
+                            ConflictMarker{
+                                .diff = temp_diff.toDiff(allocator),
+                            },
+                        );
+
+                        temp_diff = Diff.Partial.new();
+                        try temp_diff.parse(line);
+                    },
+                    .end_conflict,
+                    => {
+                        // end diff body, end of conflict
+                        state = .end_conflict;
+                        try temp_conflict_markers.append(allocator, ConflictMarker{
+                            .diff = Diff{
+                                .from = temp_diff.from.?,
+                                .to = temp_diff.to.?,
+                                .diff_lines = &[0]DiffLine{}, // TODO
+                            },
+                        });
+                    },
+                    .conflict => {
+                        return error.GenericError;
                     },
                 }
             },
@@ -74,14 +155,14 @@ pub fn parse(allocator: mem.Allocator, text: []const u8) !ParsedFile {
                 switch (marker) {
                     .conflict => {},
                     .end_conflict => {},
+                    .diff => {},
+                    .multi_line => {},
                     .none => {
                         state = .no_conflict;
-                        try text_list.append(allocator, line);
+                        try temp_lines.append(allocator, line);
                     },
                 }
             },
-            .in_diff_header,
-            .in_diff_body,
             .in_snapshot_header,
             .in_snapshot_body,
             => {},
@@ -94,11 +175,11 @@ pub fn parse(allocator: mem.Allocator, text: []const u8) !ParsedFile {
         => {
             try segments.append(allocator, .{
                 .no_conflict = NoConflict{
-                    .lines = try text_list.toOwnedSlice(allocator),
+                    .lines = try temp_lines.toOwnedSlice(allocator),
                 },
             });
         },
-        .in_conflict_header,
+        .in_conflict,
         .in_diff_header,
         .in_diff_body,
         .in_snapshot_header,
@@ -150,10 +231,16 @@ test "parse file with text and conflict" {
         \\}
     );
     defer output.deinit(allocator);
+
     try std.testing.expectEqual(3, output.segments.len);
     const segment_1 = try output.segments[0].no_conflict.toString(allocator);
     defer allocator.free(segment_1);
     try std.testing.expectEqualStrings("function before() {", segment_1);
+
+    const conflict = output.segments[1].conflict;
+    try std.testing.expectEqual(1, conflict.index);
+    try std.testing.expectEqual(3, conflict.total);
+    try std.testing.expectEqual(2, conflict.conflict_markers.len);
 
     const segment_3 = try output.segments[2].no_conflict.toString(allocator);
     defer allocator.free(segment_3);
@@ -161,8 +248,10 @@ test "parse file with text and conflict" {
 }
 
 const Marker = enum {
-    conflict,
-    end_conflict,
+    conflict, // <<<<<<<
+    end_conflict, // >>>>>>>
+    diff, // %%%%%%%
+    multi_line, // \\\\\\\
     none,
 
     fn detect(line: []const u8) Marker {
@@ -171,6 +260,12 @@ const Marker = enum {
         }
         if (mem.startsWith(u8, line, ">>>>>>>")) {
             return .end_conflict;
+        }
+        if (mem.startsWith(u8, line, "%%%%%%%")) {
+            return .diff;
+        }
+        if (mem.startsWith(u8, line, "\\\\\\\\\\\\\\")) {
+            return .multi_line;
         }
         return .none;
     }
@@ -219,7 +314,7 @@ const NoConflict = struct {
 
         var result = try allocator.alloc(u8, total_len);
         var i: usize = 0;
-        std.debug.print("lines.len:{d}\n", .{self.lines.len});
+        // std.debug.print("lines.len:{d}\n", .{self.lines.len});
         for (self.lines, 0..) |line, line_num| {
             // std.debug.print("line:{s}|i:{}|line_num:{d}|line.len:{d}\n", .{
             //     line,
@@ -255,16 +350,16 @@ test "toString" {
 const Conflict = struct {
     index: u32,
     total: u32,
-    markers: []const ConflictMarker,
+    conflict_markers: []const ConflictMarker,
 
-    fn parseHeader(line: []const u8) !Conflict {
+    fn parse(line: []const u8) !Conflict {
         var it = mem.splitScalar(u8, line, ' ');
         _ = it.next();
         _ = it.next();
 
-        const index_str = it.next() orelse return error.ParseError;
+        const index_str = it.next() orelse return error.GenericError;
         _ = it.next();
-        const total_str = it.next() orelse return error.ParseError;
+        const total_str = it.next() orelse return error.GenericError;
 
         const index = try std.fmt.parseInt(u32, index_str, 10);
         const total = try std.fmt.parseInt(u32, total_str, 10);
@@ -272,13 +367,13 @@ const Conflict = struct {
         return Conflict{
             .index = index,
             .total = total,
-            .markers = &[0]ConflictMarker{},
+            .conflict_markers = &[0]ConflictMarker{},
         };
     }
 };
 
-test "Conflict.parseHeader" {
-    const output = try Conflict.parseHeader("<<<<<<< conflict 1 of 3");
+test "Conflict.parse" {
+    const output = try Conflict.parse("<<<<<<< conflict 1 of 3");
     try std.testing.expectEqual(1, output.index);
     try std.testing.expectEqual(3, output.total);
 }
@@ -292,25 +387,65 @@ const ConflictMarker = union(enum) {
 const Diff = struct {
     from: Revision,
     to: Revision,
-    rebasedCommitID: []const u8,
-    content: []const DiffLine,
+    // rebasedCommitID: []const u8,
+    diff_lines: []const DiffLine,
 
-    // fn parse(line: []const u8) !Diff {
-    //     return Diff{
-    //         .from = try Revision.parse(line),
-    //     };
-    // }
+    const Partial = struct {
+        from: ?Revision,
+        to: ?Revision,
+        // rebasedCommitID: ?[]const u8,
+        diff_lines: std.ArrayList(DiffLine),
+
+        fn new() Partial {
+            return Partial{
+                .from = null,
+                .to = null,
+                .diff_lines = .empty,
+            };
+        }
+
+        fn deinit(self: *Partial, allocator: mem.Allocator) void {
+            self.*.from = null;
+            self.*.to = null;
+            self.diff_lines.deinit(allocator);
+        }
+
+        fn parse(self: *Partial, line: []const u8) !void {
+            switch (Marker.detect(line)) {
+                .diff => {
+                    // first line
+                    self.*.from = try Revision.parseLine1(line);
+                },
+                .multi_line => {
+                    // first line
+                    const to = try Revision.parseLine2(line);
+                    self.*.to = to;
+                    // if (mem.containsAtLeast(u8, line, 1, "(rebased revision)")) {
+                    //     self.*.rebasedCommitID = to.commitID;
+                    // }
+                },
+                else => {
+                    return error.GenericError;
+                },
+            }
+        }
+
+        fn toDiff(self: Partial, allocator: mem.Allocator) Diff {
+            const diff_lines = try self.diff_lines.toOwnedSlice(allocator);
+            defer self.diff_lines.deinit(allocator);
+            return Diff{
+                .to = self.to,
+                .from = self.from,
+                .diff_lines = diff_lines,
+            };
+        }
+    };
 };
 
-// test "Diff.parse" {
-//     const output = try Diff.parse(
-//         \\%%%%%%% diff from: ulopzqqq 6606ba58 "a"
-//         \\\\\\\\\        to: ltrosymo 096e9f1c "b+c" (rebased revision)
-//         \\-  console.log("before test");
-//         \\+  console.log("before main");
-//     );
-//     try std.testing.expectEqualDeep("ulopzqqq", output.from.changeID);
-// }
+test "Diff.parse - line 1" {
+    const output = try Diff.parse("diff from: ulopzqqq 6606ba58 \"a\"");
+    try std.testing.expectEqualDeep("ulopzqqq", output.from.changeID);
+}
 
 const DiffLine = union(enum) {
     text: []const u8,
@@ -330,22 +465,73 @@ const Revision = struct {
     commitID: []const u8,
     description: []const u8,
 
-    const Error = error{
-        ParseError,
-    };
+    fn parseQuoted(line: []const u8) ![]const u8 {
+        const first = std.mem.indexOfScalar(u8, line, '"') orelse return error.GenericError;
+        const rest = line[(first + 1)..];
+        const second_rel = std.mem.indexOfScalar(u8, rest, '"') orelse return error.GenericError;
 
-    fn parse(line: []const u8) Revision.Error!Revision {
-        _ = line;
-        return Revision.Error.ParseError;
+        return rest[0..second_rel];
+    }
+
+    fn parseLine1(line: []const u8) !Revision {
+        //%%%%%%% diff from: ulopzqqq 6606ba58 "a"
+        var it = mem.splitScalar(u8, line, ' ');
+        _ = it.next();
+        _ = it.next();
+        const from = it.next() orelse "";
+        if (!mem.eql(u8, from, "from:")) {
+            return error.GenericError;
+        }
+
+        const changeID = it.next() orelse {
+            return error.GenericError;
+        };
+        const commitID = it.next() orelse {
+            return error.GenericError;
+        };
+
+        const description = try parseQuoted(line);
+
+        return Revision{
+            .changeID = changeID,
+            .commitID = commitID,
+            .description = description,
+        };
+    }
+
+    fn parseLine2(line: []const u8) !Revision {
+        //\\\\\\\        to: ltrosymo 096e9f1c "b+c" (rebased revision)
+        var it = mem.splitScalar(u8, line, ' ');
+        while (it.next()) |token| {
+            if (mem.eql(u8, token, "to:")) {
+                break;
+            }
+        }
+
+        const changeID = it.next() orelse {
+            return error.GenericError;
+        };
+        const commitID = it.next() orelse {
+            return error.GenericError;
+        };
+
+        const description = try parseQuoted(line);
+
+        return Revision{
+            .changeID = changeID,
+            .commitID = commitID,
+            .description = description,
+        };
     }
 };
 
-// test "Revision.parse" {
-//     const output = try Revision.parse("from: ulopzqqq 6606ba58 \"a\"");
-//     try std.testing.expectEqualStrings("ulopzqqq", output.changeID);
-//     try std.testing.expectEqualStrings("6606ba58", output.commitID);
-//     try std.testing.expectEqualStrings("a", output.description);
-// }
+test "Revision.parse" {
+    const allocator = std.testing.allocator;
+    const output = try Revision.parse(allocator, "%%%%%%% diff from: ulopzqqq 6606ba58 \"a + b = c\"");
+    try std.testing.expectEqualStrings("ulopzqqq", output.?.changeID);
+    try std.testing.expectEqualStrings("6606ba58", output.?.commitID);
+    try std.testing.expectEqualStrings("a + b = c", output.?.description);
+}
 
 fn debugPrintSegments(segments: *const std.ArrayList(Segment)) void {
     std.debug.print("#######################################################\n", .{});
@@ -362,7 +548,7 @@ fn debugPrintSegments(segments: *const std.ArrayList(Segment)) void {
             .conflict => |conflict| {
                 std.debug.print(
                     "  [{d}] conflict {d} of {d}, markers={d}\n",
-                    .{ i, conflict.index, conflict.total, conflict.markers.len },
+                    .{ i, conflict.index, conflict.total, conflict.conflict_markers.len },
                 );
             },
         }
