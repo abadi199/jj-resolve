@@ -35,8 +35,10 @@ pub fn parse(allocator: mem.Allocator, text: []const u8) !ParsedFile {
     var snapshot_parser: Snapshot.Parser = Snapshot.Parser.new();
 
     var iter = mem.splitSequence(u8, text, "\n");
+    var i: usize = 0;
     while (iter.next()) |line| {
-        std.debug.print("############################\nline: {s}\n", .{line});
+        defer i += 1;
+        std.debug.print("############################ line {d}:\n{s}\n", .{ i, line });
         const marker = Marker.detect(line);
 
         std.debug.print("state: {any}\n", .{state});
@@ -119,6 +121,7 @@ pub fn parse(allocator: mem.Allocator, text: []const u8) !ParsedFile {
                                 .diff = try diff_parser.toDiff(allocator),
                             },
                         );
+
                         if (temp_conflict == null) {
                             return error.GenericError;
                         }
@@ -307,6 +310,55 @@ test "parse file with text and conflict" {
     try std.testing.expectEqualStrings("}", segment_3);
 }
 
+test "parse with multiple conflicts" {
+    const allocator = std.testing.allocator;
+    var output = try parse(
+        allocator,
+        \\function before() {
+        \\<<<<<<< conflict 1 of 3
+        \\%%%%%%% diff from: ulopzqqq 6606ba58 "a"
+        \\\\\\\\\        to: ltrosymo 096e9f1c "b+c" (rebased revision)
+        \\-  console.log("before test");
+        \\+  console.log("before main");
+        \\+++++++ vsqszzzy af5bacc0 "c"
+        \\  console.log("BEFORE TEST");
+        \\>>>>>>> conflict 1 of 3 ends
+        \\}
+        \\
+        \\<<<<<<< conflict 2 of 3
+        \\%%%%%%% diff from: ulopzqqq 6606ba58 "a"
+        \\\\\\\\\        to: ltrosymo 096e9f1c "b+c" (rebased revision)
+        \\-function test() {
+        \\+function main() {
+        \\   console.log("apple");
+        \\-  console.log("grape");
+        \\+  console.log("grapefruit");
+        \\   console.log("orange");
+        \\+++++++ vsqszzzy af5bacc0 "c"
+        \\function test() {
+        \\  console.log("APPLE");
+        \\  console.log("GRAPE");
+        \\  console.log("ORANGE");
+        \\>>>>>>> conflict 2 of 3 ends
+        \\}
+        \\
+        \\function after() {
+        \\<<<<<<< conflict 3 of 3
+        \\%%%%%%% diff from: ulopzqqq 6606ba58 "a"
+        \\\\\\\\\        to: ltrosymo 096e9f1c "b+c" (rebased revision)
+        \\-  console.log("after test");
+        \\+  console.log("after main");
+        \\+++++++ vsqszzzy af5bacc0 "c"
+        \\  console.log("AFTER TEST");
+        \\>>>>>>> conflict 3 of 3 ends
+        \\}
+        ,
+    );
+
+    defer output.deinit(allocator);
+    try testing.expectEqual(7, output.segments.len);
+}
+
 const Marker = enum {
     conflict, // <<<<<<<
     end_conflict, // >>>>>>>
@@ -338,7 +390,7 @@ const Marker = enum {
 const ParsedFile = struct {
     segments: []const Segment,
 
-    fn deinit(self: *ParsedFile, allocator: mem.Allocator) void {
+    pub fn deinit(self: *ParsedFile, allocator: mem.Allocator) void {
         for (self.segments) |segment| {
             switch (segment) {
                 .no_conflict => |no_conflict| {
@@ -352,7 +404,63 @@ const ParsedFile = struct {
 
         allocator.free(self.segments);
     }
+
+    pub fn getBase(self: ParsedFile, allocator: mem.Allocator) ![]const u8 {
+        var buffer = std.ArrayList(u8).empty;
+        for (self.segments, 0..) |segment, i| {
+            switch (segment) {
+                .no_conflict => |no_conflict| {
+                    const str = try no_conflict.toString(allocator);
+                    defer allocator.free(str);
+
+                    try buffer.appendSlice(allocator, str);
+                    if (i < self.segments.len - 1) {
+                        try buffer.append(allocator, '\n');
+                    }
+                },
+                .conflict => |conflict| {
+                    for (conflict.conflict_markers) |conflict_marker| {
+                        switch (conflict_marker) {
+                            .diff => |diff| {
+                                const str = try diff.getBase(allocator);
+                                defer allocator.free(str);
+                                try buffer.appendSlice(allocator, str);
+                            },
+                            .snapshot => {},
+                        }
+                    }
+                },
+            }
+        }
+
+        return try buffer.toOwnedSlice(allocator);
+    }
 };
+
+test "getBase" {
+    const allocator = std.testing.allocator;
+    var parsed_file = try parse(allocator,
+        \\function before() {
+        \\<<<<<<< conflict 1 of 3
+        \\%%%%%%% diff from: ulopzqqq 6606ba58 "a"
+        \\\\\\\\\        to: ltrosymo 096e9f1c "b+c" (rebased revision)
+        \\-  console.log("before test");
+        \\+  console.log("before main");
+        \\+++++++ vsqszzzy af5bacc0 "c"
+        \\  console.log("BEFORE TEST");
+        \\>>>>>>> conflict 1 of 3 ends
+        \\}
+    );
+    defer parsed_file.deinit(allocator);
+    const output = try parsed_file.getBase(allocator);
+    defer allocator.free(output);
+
+    try testing.expectEqualStrings(
+        \\function before() {
+        \\  console.log("before test");
+        \\}
+    , output);
+}
 
 const Segment = union(enum) {
     no_conflict: NoConflict,
@@ -377,14 +485,7 @@ const NoConflict = struct {
 
         var result = try allocator.alloc(u8, total_len);
         var i: usize = 0;
-        // std.debug.print("lines.len:{d}\n", .{self.lines.len});
         for (self.lines, 0..) |line, line_num| {
-            // std.debug.print("line:{s}|i:{}|line_num:{d}|line.len:{d}\n", .{
-            //     line,
-            //     i,
-            //     line_num,
-            //     line.len,
-            // });
             @memcpy(result[i..(i + line.len)], line);
             i += line.len;
 
@@ -467,6 +568,34 @@ const Diff = struct {
     // rebasedCommitID: []const u8,
     diff_lines: []const DiffLine,
 
+    fn getBase(self: Diff, allocator: mem.Allocator) ![]const u8 {
+        return try self.toString(allocator, self.from.commitID);
+    }
+
+    fn toString(self: Diff, allocator: mem.Allocator, commitID: []const u8) ![]const u8 {
+        if (mem.eql(u8, self.from.commitID, commitID)) {
+            var buffer = std.ArrayList(u8).empty;
+            defer buffer.deinit(allocator);
+            for (self.diff_lines) |diff_line| {
+                switch (diff_line) {
+                    .delete,
+                    .text,
+                    => |text| {
+                        try buffer.appendSlice(allocator, text);
+                        try buffer.append(allocator, '\n');
+                    },
+                    .add => {},
+                }
+            }
+
+            return try buffer.toOwnedSlice(allocator);
+        } else if (mem.eql(u8, self.to.commitID, commitID)) {
+            return "TODO";
+        } else {
+            return "";
+        }
+    }
+
     fn deinit(self: Diff, allocator: mem.Allocator) void {
         allocator.free(self.diff_lines);
     }
@@ -476,6 +605,12 @@ const Diff = struct {
         to: ?Revision,
         // rebasedCommitID: ?[]const u8,
         diff_lines: std.ArrayList(DiffLine),
+
+        fn reset(self: *Parser) void {
+            self.*.from = null;
+            self.*.to = null;
+            self.*.diff_lines = .empty;
+        }
 
         fn new() Parser {
             return Parser{
@@ -507,6 +642,7 @@ const Diff = struct {
         }
 
         fn toDiff(self: *Parser, allocator: mem.Allocator) !Diff {
+            defer self.reset();
             const diff_lines = try self.diff_lines.toOwnedSlice(allocator);
             defer self.diff_lines.deinit(allocator);
             return Diff{
@@ -551,7 +687,7 @@ const DiffLine = union(enum) {
                 return DiffLine{ .delete = line[1..] };
             },
             .text => {
-                return DiffLine{ .text = line[0..] };
+                return DiffLine{ .text = line[1..] };
             },
         }
     }
@@ -569,6 +705,11 @@ const Snapshot = struct {
     const Parser = struct {
         commit: ?Revision,
         lines: std.ArrayList([]const u8),
+
+        fn reset(self: *Parser) void {
+            self.*.commit = null;
+            self.*.lines = .empty;
+        }
 
         fn new() Snapshot.Parser {
             return Snapshot.Parser{
@@ -589,6 +730,7 @@ const Snapshot = struct {
             }
         }
         fn toSnapshot(self: *Parser, allocator: mem.Allocator) !Snapshot {
+            defer self.reset();
             const lines = try self.lines.toOwnedSlice(allocator);
             defer self.lines.deinit(allocator);
             return Snapshot{
