@@ -1,8 +1,10 @@
 const std = @import("std");
 const jjresolve = @import("root.zig");
+const ParsedFile = jjresolve.ParsedFile;
+const Revision = jjresolve.Revision;
 const dvui = @import("dvui");
 
-var base_text: []u8 = &.{};
+var file: ?ParsedFile = null;
 
 pub const dvui_app: dvui.App = .{
     .config = .{
@@ -29,11 +31,14 @@ const gpa = std.heap.page_allocator;
 // - runs between win.begin()/win.end()
 pub fn AppInit(win: *dvui.Window) !void {
     _ = win;
+    try openFile("./example/test1.ts");
 }
 
 // Run as app is shutting down before dvui.Window.deinit()
 pub fn AppDeinit() void {
-    gpa.free(base_text);
+    if (file) |*f| {
+        f.deinit(gpa);
+    }
 }
 
 // Run each frame to do normal UI
@@ -74,12 +79,7 @@ pub fn frame() !dvui.App.Result {
                     break :blk null;
                 };
                 if (filename) |f| {
-                    const data = try std.fs.cwd().readFileAlloc(gpa, f, 10 * 1024 * 1024);
-                    var parsed_file = try jjresolve.parse(gpa, data);
-                    const base_str = try parsed_file.getBase(gpa);
-                    defer gpa.free(base_str);
-                    base_text = try gpa.dupe(u8, base_str);
-                    defer parsed_file.deinit(gpa);
+                    try openFile(f);
                 }
             }
 
@@ -88,6 +88,8 @@ pub fn frame() !dvui.App.Result {
             }
         }
     }
+
+    // Main pane
     {
         var split_ratio: f32 = 0.33;
         var main_pane = dvui.paned(
@@ -98,18 +100,24 @@ pub fn frame() !dvui.App.Result {
         defer main_pane.deinit();
 
         if (main_pane.showFirst()) {
+            // Base Column
             var vbox = dvui.box(
                 @src(),
                 .{ .dir = .vertical },
                 .{ .expand = .both, .background = true },
             );
             defer vbox.deinit();
+
+            if (file) |f| {
+                if (f.getBaseRevision()) |rev| {
+                    renderRevision(rev);
+                }
+            }
+
+            const base_text: []u8 = @constCast(if (file) |f| try f.getBase(gpa) else "");
             var text_entry = dvui.textEntry(
                 @src(),
-                .{ .multiline = true, .text = .{ .buffer_dynamic = .{
-                    .backing = &base_text,
-                    .allocator = gpa,
-                } } },
+                .{ .multiline = true, .text = .{ .buffer = base_text } },
                 .{ .expand = .both },
             );
             defer text_entry.deinit();
@@ -123,42 +131,12 @@ pub fn frame() !dvui.App.Result {
             defer output_pane.deinit();
 
             if (output_pane.showFirst()) {
-                var revision_pane = dvui.paned(
-                    @src(),
-                    .{ .direction = .vertical, .collapsed_size = 10 },
-                    .{ .expand = .both, .background = true },
-                );
-                defer revision_pane.deinit();
-                if (revision_pane.showFirst()) {
-                    var hbox1 = dvui.box(
-                        @src(),
-                        .{ .dir = .vertical },
-                        .{ .expand = .both, .background = true },
-                    );
-                    defer hbox1.deinit();
-                    var text_entry = dvui.textEntry(
-                        @src(),
-                        .{ .multiline = true },
-                        .{ .expand = .both },
-                    );
-                    defer text_entry.deinit();
-                }
-                if (revision_pane.showSecond()) {
-                    var hbox1 = dvui.box(
-                        @src(),
-                        .{ .dir = .vertical },
-                        .{ .expand = .both, .background = true },
-                    );
-                    defer hbox1.deinit();
-                    var text_entry = dvui.textEntry(
-                        @src(),
-                        .{ .multiline = true },
-                        .{ .expand = .both },
-                    );
-                    defer text_entry.deinit();
+                if (file) |f| {
+                    try renderBranches(f);
                 }
             }
             if (output_pane.showSecond()) {
+                // Output column
                 var vbox = dvui.box(
                     @src(),
                     .{ .dir = .vertical },
@@ -176,4 +154,51 @@ pub fn frame() !dvui.App.Result {
     }
 
     return .ok;
+}
+
+fn renderBranches(parsed_file: ParsedFile) !void {
+    const revisions = try parsed_file.getRevisions(gpa);
+    for (revisions, 0..) |rev, i| {
+        const vbox = dvui.box(
+            @src(),
+            .{
+                .dir = .vertical,
+            },
+            .{
+                .expand = .horizontal,
+                .background = true,
+                .color_fill = .blue,
+                .id_extra = i,
+            },
+        );
+        defer vbox.deinit();
+        renderRevision(rev);
+        try renderContent(parsed_file, rev);
+    }
+}
+
+fn renderContent(parsed_file: ParsedFile, revision: Revision) !void {
+    const text = try parsed_file.getContent(gpa, revision);
+    const text_entry = dvui.textEntry(
+        @src(),
+        .{ .multiline = true, .text = .{ .buffer = @constCast(text) } },
+        .{ .expand = .both },
+    );
+    defer text_entry.deinit();
+}
+
+fn renderRevision(revision: jjresolve.Revision) void {
+    {
+        const hbox = dvui.box(@src(), .{ .dir = .horizontal }, .{ .expand = .horizontal, .background = true, .color_fill = .red });
+        defer hbox.deinit();
+        dvui.label(@src(), "Change ID: {s}", .{revision.changeID}, .{ .expand = .horizontal });
+        dvui.label(@src(), "Commit ID: {s}", .{revision.commitID}, .{ .expand = .horizontal });
+    }
+
+    dvui.label(@src(), "Description: {s}", .{revision.description}, .{ .expand = .horizontal });
+}
+
+fn openFile(filename: []const u8) !void {
+    const data = try std.fs.cwd().readFileAlloc(gpa, filename, 10 * 1024 * 1024);
+    file = try jjresolve.parse(gpa, data);
 }
