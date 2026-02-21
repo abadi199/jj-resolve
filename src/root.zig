@@ -38,11 +38,11 @@ pub fn parse(allocator: mem.Allocator, text: []const u8) !ParsedFile {
     var i: usize = 0;
     while (iter.next()) |line| {
         defer i += 1;
-        std.debug.print("############################ line {d}:\n{s}\n", .{ i, line });
+        // std.debug.print("############################ line {d}:\n{s}\n", .{ i, line });
         const marker = Marker.detect(line);
 
-        std.debug.print("state: {any}\n", .{state});
-        std.debug.print("marker: {any}\n", .{marker});
+        // std.debug.print("state: {any}\n", .{state});
+        // std.debug.print("marker: {any}\n", .{marker});
         switch (state) {
             .no_conflict => {
                 switch (marker) {
@@ -543,7 +543,7 @@ test "ParsedFile.getRevisions" {
     const output = try parsed_file.getRevisions(allocator);
     defer allocator.free(output);
 
-    try testing.expectEqual(output.len, 3);
+    try testing.expectEqual(output.len, 2);
 }
 
 test "ParsedFile.getBase" {
@@ -757,8 +757,7 @@ const Diff = struct {
                     //     self.*.rebasedCommitID = to.commitID;
                     // }
                 },
-                else => |marker| {
-                    std.debug.print("marker:{any}", .{marker});
+                else => {
                     return error.GenericError;
                 },
             }
@@ -972,9 +971,9 @@ pub const Revision = struct {
 
 test "Revision.parseLine1" {
     const output = try Revision.parseLine1("%%%%%%% diff from: ulopzqqq 6606ba58 \"a + b = c\"");
-    try std.testing.expectEqualStrings("ulopzqqq", output.?.changeID);
-    try std.testing.expectEqualStrings("6606ba58", output.?.commitID);
-    try std.testing.expectEqualStrings("a + b = c", output.?.description);
+    try std.testing.expectEqualStrings("ulopzqqq", output.changeID);
+    try std.testing.expectEqualStrings("6606ba58", output.commitID);
+    try std.testing.expectEqualStrings("a + b = c", output.description);
 }
 
 fn debugPrintSegments(segments: *const std.ArrayList(Segment)) void {

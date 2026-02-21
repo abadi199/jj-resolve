@@ -1,204 +1,152 @@
 const std = @import("std");
+const glib = @import("glib");
+const gobject = @import("gobject");
+const gio = @import("gio");
+const gtk = @import("gtk");
+const gdk = @import("gdk");
+const gtksource = @import("gtksource");
 const jjresolve = @import("root.zig");
-const ParsedFile = jjresolve.ParsedFile;
-const Revision = jjresolve.Revision;
-const dvui = @import("dvui");
+const ui = @import("ui.zig");
 
-var file: ?ParsedFile = null;
+var base_revision_widget: ?ui.RevisionWidget = null;
+var base_buffer: *gtksource.Buffer = undefined;
+var base_view: *gtksource.View = undefined;
 
-pub const dvui_app: dvui.App = .{
-    .config = .{
-        .options = .{
-            .size = .{ .w = 1900.0, .h = 1000.0 },
-            .min_size = .{ .w = 250.0, .h = 350.0 },
-            .title = "JJResolve",
-            .window_init_options = .{
-                // Could set a default theme here
-                // .theme = dvui.Theme.builtin.dracula,
-            },
-        },
-    },
-    .frameFn = AppFrame,
-    .initFn = AppInit,
-    .deinitFn = AppDeinit,
-};
-pub const main = dvui.App.main;
-pub const panic = dvui.App.panic;
+pub fn main() void {
+    base_buffer = gtksource.Buffer.new(null);
+    defer deinit();
 
-const gpa = std.heap.page_allocator;
-
-// Runs before the first frame, after backend and dvui.Window.init()
-// - runs between win.begin()/win.end()
-pub fn AppInit(win: *dvui.Window) !void {
-    _ = win;
-    try openFile("./example/test1.ts");
+    var app = gtk.Application.new("org.gtk.example", .{});
+    defer app.unref();
+    _ = gio.Application.signals.activate.connect(app, ?*anyopaque, &activate, null, .{});
+    const status = gio.Application.run(app.as(gio.Application), @intCast(std.os.argv.len), std.os.argv.ptr);
+    std.process.exit(@intCast(status));
 }
 
-// Run as app is shutting down before dvui.Window.deinit()
-pub fn AppDeinit() void {
-    if (file) |*f| {
+fn deinit() void {
+    if (file) |f| {
         f.deinit(gpa);
     }
+
+    base_buffer.unref();
+    base_view.unref();
 }
 
-// Run each frame to do normal UI
-pub fn AppFrame() !dvui.App.Result {
-    return frame();
-}
+fn activate(app: *gtk.Application, _: ?*anyopaque) callconv(.c) void {
+    var provider = gtk.CssProvider.new();
+    provider.loadFromString(@embedFile("style.css"));
 
-pub fn frame() !dvui.App.Result {
-    var scaler = dvui.scale(@src(), .{ .scale = &dvui.currentWindow().content_scale, .pinch_zoom = .global }, .{ .rect = .cast(dvui.windowRect()) });
-    scaler.deinit();
-
-    {
-        var hbox = dvui.box(
-            @src(),
-            .{ .dir = .horizontal },
-            .{
-                .style = .window,
-                .background = true,
-                .color_fill = .green,
-                .expand = .horizontal,
-            },
-        );
-        defer hbox.deinit();
-
-        var m = dvui.menu(@src(), .horizontal, .{});
-        defer m.deinit();
-
-        if (dvui.menuItemLabel(@src(), "File", .{ .submenu = true }, .{ .tag = "first-focusable" })) |r| {
-            var fw = dvui.floatingMenu(@src(), .{ .from = r }, .{});
-            defer fw.deinit();
-
-            if (dvui.menuItemLabel(@src(), "Open file", .{}, .{ .expand = .horizontal }) != null) {
-                m.close();
-                const filename = dvui.dialogNativeFileOpen(dvui.currentWindow().arena(), .{
-                    .title = "JJResolve open file",
-                }) catch |err| blk: {
-                    dvui.log.debug("Could not open file dialog, got {any}", .{err});
-                    break :blk null;
-                };
-                if (filename) |f| {
-                    try openFile(f);
-                }
-            }
-
-            if (dvui.menuItemLabel(@src(), "Exit", .{}, .{ .expand = .horizontal }) != null) {
-                return .close;
-            }
-        }
-    }
-
-    // Main pane
-    {
-        var split_ratio: f32 = 0.33;
-        var main_pane = dvui.paned(
-            @src(),
-            .{ .direction = .horizontal, .collapsed_size = 100, .handle_margin = 0, .split_ratio = &split_ratio },
-            .{ .style = .window, .background = true, .expand = .both },
-        );
-        defer main_pane.deinit();
-
-        if (main_pane.showFirst()) {
-            // Base Column
-            var vbox = dvui.box(
-                @src(),
-                .{ .dir = .vertical },
-                .{ .expand = .both, .background = true },
-            );
-            defer vbox.deinit();
-
-            if (file) |f| {
-                if (f.getBaseRevision()) |rev| {
-                    renderRevision(rev);
-                }
-            }
-
-            const base_text: []u8 = @constCast(if (file) |f| try f.getBase(gpa) else "");
-            var text_entry = dvui.textEntry(
-                @src(),
-                .{ .multiline = true, .text = .{ .buffer = base_text } },
-                .{ .expand = .both },
-            );
-            defer text_entry.deinit();
-        }
-        if (main_pane.showSecond()) {
-            var output_pane = dvui.paned(
-                @src(),
-                .{ .direction = .horizontal, .collapsed_size = 10 },
-                .{ .expand = .both, .background = true },
-            );
-            defer output_pane.deinit();
-
-            if (output_pane.showFirst()) {
-                if (file) |f| {
-                    try renderBranches(f);
-                }
-            }
-            if (output_pane.showSecond()) {
-                // Output column
-                var vbox = dvui.box(
-                    @src(),
-                    .{ .dir = .vertical },
-                    .{ .expand = .both, .background = true },
-                );
-                defer vbox.deinit();
-                var text_entry = dvui.textEntry(
-                    @src(),
-                    .{ .multiline = true },
-                    .{ .expand = .both },
-                );
-                defer text_entry.deinit();
-            }
-        }
-    }
-
-    return .ok;
-}
-
-fn renderBranches(parsed_file: ParsedFile) !void {
-    const revisions = try parsed_file.getRevisions(gpa);
-    for (revisions, 0..) |rev, i| {
-        const vbox = dvui.box(
-            @src(),
-            .{
-                .dir = .vertical,
-            },
-            .{
-                .expand = .horizontal,
-                .background = true,
-                .color_fill = .blue,
-                .id_extra = i,
-            },
-        );
-        defer vbox.deinit();
-        renderRevision(rev);
-        try renderContent(parsed_file, rev);
-    }
-}
-
-fn renderContent(parsed_file: ParsedFile, revision: Revision) !void {
-    const text = try parsed_file.getContent(gpa, revision);
-    const text_entry = dvui.textEntry(
-        @src(),
-        .{ .multiline = true, .text = .{ .buffer = @constCast(text) } },
-        .{ .expand = .both },
+    gtk.StyleContext.addProviderForDisplay(
+        gdk.Display.getDefault().?,
+        provider.as(gtk.StyleProvider),
+        gtk.STYLE_PROVIDER_PRIORITY_APPLICATION,
     );
-    defer text_entry.deinit();
-}
 
-fn renderRevision(revision: jjresolve.Revision) void {
-    {
-        const hbox = dvui.box(@src(), .{ .dir = .horizontal }, .{ .expand = .horizontal, .background = true, .color_fill = .red });
-        defer hbox.deinit();
-        dvui.label(@src(), "Change ID: {s}", .{revision.changeID}, .{ .expand = .horizontal });
-        dvui.label(@src(), "Commit ID: {s}", .{revision.commitID}, .{ .expand = .horizontal });
+    var window = gtk.ApplicationWindow.new(app);
+    gtk.Window.setTitle(window.as(gtk.Window), "Window");
+    gtk.Window.setDefaultSize(window.as(gtk.Window), 800, 600);
+    gtk.Window.maximize(window.as(gtk.Window));
+
+    // gtk.Window.setChild(window.as(gtk.Window), scrolled_window.as(gtk.Widget));
+    createColumns(window.as(gtk.Window));
+
+    gtk.Widget.show(window.as(gtk.Widget));
+
+    // load file
+    const f = openFile(
+        "./example/test1.ts",
+    ) catch {
+        return;
+    };
+
+    if (base_revision_widget) |widget| {
+        const base_revision = f.getBaseRevision();
+        if (base_revision) |rev| {
+            widget.setRevision(gpa, rev) catch {};
+        }
     }
 
-    dvui.label(@src(), "Description: {s}", .{revision.description}, .{ .expand = .horizontal });
+    const base_content = f.getBase(gpa) catch |err| {
+        std.log.err("Failed to get base content: {}", .{err});
+        return;
+    };
+    const text = gpa.dupeZ(u8, base_content) catch |err| {
+        std.log.err("Failed to get base content: {}", .{err});
+        return;
+    };
+    gtk.TextBuffer.setText(base_buffer.as(gtk.TextBuffer), text.ptr, -1);
+
+    file = f;
 }
 
-fn openFile(filename: []const u8) !void {
+fn closeWindow(_: *gtk.Button, window: *gtk.ApplicationWindow) callconv(.c) void {
+    gtk.Window.destroy(window.as(gtk.Window));
+}
+
+fn createColumns(window: *gtk.Window) void {
+    var hbox = gtk.Box.new(.horizontal, 5);
+    gtk.Widget.setMarginBottom(hbox.as(gtk.Widget), 10);
+    gtk.Widget.setMarginTop(hbox.as(gtk.Widget), 10);
+    gtk.Widget.setMarginEnd(hbox.as(gtk.Widget), 10);
+    gtk.Widget.setMarginStart(hbox.as(gtk.Widget), 10);
+    gtk.Widget.setHexpand(hbox.as(gtk.Widget), 1);
+    gtk.Box.setHomogeneous(hbox, 1);
+
+    var left_box = gtk.Box.new(.vertical, 5);
+    base_revision_widget = ui.RevisionWidget.new(left_box);
+    base_view = appendCodeView(left_box, base_buffer);
+    gtk.TextView.setEditable(base_view.as(gtk.TextView), 0);
+    gtk.TextView.setCursorVisible(base_view.as(gtk.TextView), 0);
+    gtk.Widget.addCssClass(left_box.as(gtk.Widget), "left-box");
+
+    var middle_box = gtk.Box.new(.vertical, 5);
+    _ = ui.RevisionWidget.new(middle_box);
+    gtk.Widget.addCssClass(middle_box.as(gtk.Widget), "middle-box");
+
+    var right_box = gtk.Box.new(.vertical, 5);
+    _ = ui.RevisionWidget.new(right_box);
+    gtk.Widget.addCssClass(right_box.as(gtk.Widget), "right-box");
+
+    hbox.append(left_box.as(gtk.Widget));
+    hbox.append(middle_box.as(gtk.Widget));
+    hbox.append(right_box.as(gtk.Widget));
+
+    gtk.Window.setChild(window, hbox.as(gtk.Widget));
+}
+
+fn appendCodeView(box: *gtk.Box, buffer: *gtksource.Buffer) *gtksource.View {
+    const lang_manager = gtksource.LanguageManager.getDefault();
+    if (gtksource.LanguageManager.getLanguage(lang_manager, "typescript")) |language| {
+        gtksource.Buffer.setLanguage(buffer, language);
+    }
+
+    const scheme_manager = gtksource.StyleSchemeManager.getDefault();
+    if (gtksource.StyleSchemeManager.getScheme(scheme_manager, "Adwaita-dark")) |scheme| {
+        gtksource.Buffer.setStyleScheme(buffer, scheme);
+    }
+
+    // Create the GtkSourceView with the buffer
+    var source_view = gtksource.View.newWithBuffer(buffer.as(gtksource.Buffer));
+    gtksource.View.setShowLineNumbers(source_view, 0); // show line numbers
+    gtksource.View.setHighlightCurrentLine(source_view, 1); // highlight current line
+    gtksource.View.setTabWidth(source_view, 4);
+    gtk.TextView.setMonospace(source_view.as(gtk.TextView), 1); // use monospace font
+
+    // Wrap the source view in a scrolled window
+    var scrolled_window = gtk.ScrolledWindow.new();
+    gtk.ScrolledWindow.setChild(scrolled_window, source_view.as(gtk.Widget));
+    gtk.Widget.setVexpand(scrolled_window.as(gtk.Widget), 1); // fill vertical space
+    gtk.Widget.setHexpand(scrolled_window.as(gtk.Widget), 1); // fill horizontal space
+
+    box.append(scrolled_window.as(gtk.Widget));
+
+    return source_view;
+}
+
+var file: ?jjresolve.ParsedFile = null;
+const gpa = std.heap.page_allocator;
+
+fn openFile(filename: []const u8) !jjresolve.ParsedFile {
     const data = try std.fs.cwd().readFileAlloc(gpa, filename, 10 * 1024 * 1024);
-    file = try jjresolve.parse(gpa, data);
+    return try jjresolve.parse(gpa, data);
 }

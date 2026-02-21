@@ -32,9 +32,9 @@
     // Once all dependencies are fetched, `zig build` no longer requires
     // internet connectivity.
     .dependencies = .{
-        .dvui = .{
-            .url = "git+https://github.com/david-vanderson/dvui?ref=main#512effa9e85dcc3b7a3bd91fba1507db43d8e3b2",
-            .hash = "dvui-0.4.0-dev-AQFJmaUl2wDILiSjTgLsiLhmGGWNK-VPi6vtIslpLXc0",
+        .gobject = .{
+            .url = "https://github.com/ianprime0509/zig-gobject/releases/download/v0.3.1/bindings-gnome49.tar.zst",
+            .hash = "gobject-0.3.1-Skun7JC5fAFWOaM_zWo3XZAw7wPa6GYKK6U76Yy_Jkvt",
         },
     },
     .paths = .{

@@ -20,8 +20,18 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    const dvui_dep = b.dependency("dvui", .{ .target = target, .optimize = optimize, .backend = .sdl3 });
-    exe.root_module.addImport("dvui", dvui_dep.module("dvui_sdl3"));
+    // DVUI
+    // const dvui_dep = b.dependency("dvui", .{ .target = target, .optimize = optimize, .backend = .sdl3 });
+    // exe.root_module.addImport("dvui", dvui_dep.module("dvui_sdl3"));
+
+    // GObject (GTK)
+    const gobject = b.dependency("gobject", .{});
+    exe.root_module.addImport("gtk", gobject.module("gtk4"));
+    exe.root_module.addImport("gdk", gobject.module("gdk4"));
+    exe.root_module.addImport("adw", gobject.module("adw1"));
+    exe.root_module.addImport("gio", gobject.module("gio2"));
+    exe.root_module.addImport("gobject", gobject.module("gobject2"));
+    exe.root_module.addImport("gtksource", gobject.module("gtksource5"));
 
     b.installArtifact(exe);
 
