@@ -479,9 +479,10 @@ pub const ParsedFile = struct {
                     for (conflict.conflict_markers) |conflict_marker| {
                         switch (conflict_marker) {
                             .diff => |diff| {
-                                const str = try diff.getBase(allocator);
+                                const str = try diff.getBaseContent(allocator);
                                 defer allocator.free(str);
                                 try buffer.appendSlice(allocator, str);
+                                try buffer.append(allocator, '\n');
                             },
                             .snapshot => {},
                         }
@@ -579,7 +580,7 @@ const Segment = union(enum) {
 const NoConflict = struct {
     lines: []const []const u8,
 
-    fn toString(self: NoConflict, allocator: mem.Allocator) ![]const u8 {
+    pub fn toString(self: NoConflict, allocator: mem.Allocator) ![]const u8 {
         if (self.lines.len == 0) {
             return "";
         }
@@ -677,7 +678,7 @@ const Diff = struct {
     // rebasedCommitID: []const u8,
     diff_lines: []const DiffLine,
 
-    fn getBase(self: Diff, allocator: mem.Allocator) ![]const u8 {
+    pub fn getBaseContent(self: Diff, allocator: mem.Allocator) ![]const u8 {
         return try self.getContent(allocator, self.from.commitID);
     }
 
@@ -697,6 +698,7 @@ const Diff = struct {
                 }
             }
 
+            if (buffer.items.len > 0) _ = buffer.pop();
             return try buffer.toOwnedSlice(allocator);
         } else if (mem.eql(u8, self.to.commitID, commitID)) {
             var buffer = std.ArrayList(u8).empty;
@@ -713,6 +715,7 @@ const Diff = struct {
                 }
             }
 
+            if (buffer.items.len > 0) _ = buffer.pop();
             return try buffer.toOwnedSlice(allocator);
         } else {
             return "";

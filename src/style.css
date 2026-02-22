@@ -10,11 +10,12 @@
     /*background-color: #00ff00;*/
 }
 
-.inline-label {
-    background-color: #2d5986;
-    color: white;
-    padding: 4px 8px;
-    font-size: 0.85em;
-    font-weight: bold;
-    min-width: 500px;
+.conflict-label {
+    background-color: #990000;
+    padding: 2px;
+}
+.conflict-frame {
+    border: 1px solid #990000;
+    border-radius: 0;
+    padding: 0;
 }

@@ -4,7 +4,7 @@ const gobject = @import("gobject");
 const gio = @import("gio");
 const gtk = @import("gtk");
 const gtksource = @import("gtksource");
-const jjresolve = @import("root.zig");
+const parser = @import("parser.zig");
 
 pub const RevisionWidget = struct {
     change_label: *gtk.Label,
@@ -57,7 +57,7 @@ pub const RevisionWidget = struct {
         };
     }
 
-    pub fn setRevision(self: @This(), allocator: std.mem.Allocator, revision: jjresolve.Revision) !void {
+    pub fn setRevision(self: @This(), allocator: std.mem.Allocator, revision: parser.Revision) !void {
         const label_text = try allocator.dupeZ(u8, revision.changeID);
         self.change_label.setLabel(label_text);
         const commit_text = try allocator.dupeZ(u8, revision.commitID);
@@ -68,5 +68,106 @@ pub const RevisionWidget = struct {
 
     pub fn deinit(self: *@This()) void {
         self.revision = null;
+    }
+};
+
+pub const BaseView = struct {
+    selected_conflict_index: ?u32,
+
+    pub fn new() BaseView {
+        return BaseView{
+            .selected_conflict_index = null,
+        };
+    }
+
+    pub fn render(_: *BaseView, allocator: std.mem.Allocator, file: parser.ParsedFile, parent: *gtk.Box) !void {
+        var scroll_window = gtk.ScrolledWindow.new();
+        parent.append(scroll_window.as(gtk.Widget));
+
+        var box = gtk.Box.new(.vertical, 0);
+
+        gtk.Widget.setVexpand(box.as(gtk.Widget), 1);
+        gtk.Widget.setHexpand(box.as(gtk.Widget), 1);
+        scroll_window.setChild(box.as(gtk.Widget));
+        for (file.segments) |segment| {
+            switch (segment) {
+                .no_conflict => |no_conflict| {
+                    const buffer = gtksource.Buffer.new(null);
+                    const content = try allocator.dupeZ(u8, try no_conflict.toString(allocator));
+                    gtk.TextBuffer.setText(buffer.as(gtk.TextBuffer), content, -1);
+                    const view = createCodeView(buffer);
+                    box.append(view.as(gtk.Widget));
+                    gtksource.View.setHighlightCurrentLine(view, 0);
+                    gtk.TextView.setEditable(view.as(gtk.TextView), 0);
+                    gtk.TextView.setCursorVisible(view.as(gtk.TextView), 0);
+                },
+                .conflict => |conflict| {
+                    var conflict_box = gtk.Box.new(.vertical, 0);
+
+                    gtk.Widget.setMarginBottom(conflict_box.as(gtk.Widget), 2);
+                    gtk.Widget.addCssClass(conflict_box.as(gtk.Widget), "conflict-box");
+                    box.append(conflict_box.as(gtk.Widget));
+
+                    var conflict_label = gtk.Label.new(try std.fmt.allocPrintSentinel(
+                        allocator,
+                        "Conflict {d} of {d}",
+                        .{ conflict.index, conflict.total },
+                        0,
+                    ));
+                    conflict_label.setXalign(0.0);
+                    gtk.Widget.addCssClass(conflict_label.as(gtk.Widget), "conflict-label");
+                    gtk.Widget.setHexpand(conflict_label.as(gtk.Widget), 1);
+                    conflict_box.append(conflict_label.as(gtk.Widget));
+
+                    for (conflict.conflict_markers) |marker| {
+                        switch (marker) {
+                            .diff => |diff| {
+                                const buffer = gtksource.Buffer.new(null);
+                                const content = try allocator.dupeZ(u8, try diff.getBaseContent(allocator));
+                                gtk.TextBuffer.setText(buffer.as(gtk.TextBuffer), content, -1);
+                                const frame = gtk.Frame.new(null);
+                                gtk.Widget.addCssClass(frame.as(gtk.Widget), "conflict-frame");
+                                const view = createCodeView(buffer);
+                                frame.setChild(view.as(gtk.Widget));
+                                conflict_box.append(frame.as(gtk.Widget));
+                                gtksource.View.setHighlightCurrentLine(view, 0);
+                                gtk.TextView.setEditable(view.as(gtk.TextView), 0);
+                                gtk.TextView.setCursorVisible(view.as(gtk.TextView), 0);
+                            },
+                            .snapshot => {},
+                        }
+                    }
+                },
+            }
+        }
+    }
+
+    pub fn createCodeView(buffer: *gtksource.Buffer) *gtksource.View {
+        const lang_manager = gtksource.LanguageManager.getDefault();
+        if (gtksource.LanguageManager.getLanguage(lang_manager, "typescript")) |language| {
+            gtksource.Buffer.setLanguage(buffer, language);
+        }
+
+        const scheme_manager = gtksource.StyleSchemeManager.getDefault();
+        if (gtksource.StyleSchemeManager.getScheme(scheme_manager, "Adwaita-dark")) |scheme| {
+            gtksource.Buffer.setStyleScheme(buffer, scheme);
+        }
+
+        // Create the GtkSourceView with the buffer
+        var source_view = gtksource.View.newWithBuffer(buffer.as(gtksource.Buffer));
+        gtksource.View.setShowLineNumbers(source_view, 0); // show line numbers
+        gtksource.View.setHighlightCurrentLine(source_view, 1); // highlight current line
+        gtksource.View.setTabWidth(source_view, 4);
+        gtk.TextView.setMonospace(source_view.as(gtk.TextView), 1); // use monospace font
+
+        // Wrap the source view in a scrolled window
+        // var scrolled_window = gtk.ScrolledWindow.new();
+        // gtk.ScrolledWindow.setChild(scrolled_window, source_view.as(gtk.Widget));
+        // gtk.Widget.setVexpand(scrolled_window.as(gtk.Widget), 1); // fill vertical space
+        // gtk.Widget.setHexpand(scrolled_window.as(gtk.Widget), 1); // fill horizontal space
+
+        // box.append(source_view.as(gtk.Widget));
+
+        return source_view;
     }
 };
