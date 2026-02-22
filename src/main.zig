@@ -14,8 +14,9 @@ var base_revision_widget: ?ui.RevisionWidget = null;
 var base_buffer: *gtksource.Buffer = undefined;
 var base_view: ?*ui.BaseView = null;
 
-// Markers view state
-var markers_box: *gtk.Box = undefined;
+// Revisions view state
+var revisions_box: *gtk.Box = undefined;
+var revisions_view: ?*ui.RevisionsView = null;
 
 pub fn main() void {
     base_buffer = gtksource.Buffer.new(null);
@@ -36,6 +37,11 @@ fn deinit() void {
     base_buffer.unref();
 
     if (base_view) |v| {
+        v.deinit();
+        gpa.destroy(v);
+    }
+
+    if (revisions_view) |v| {
         v.deinit();
         gpa.destroy(v);
     }
@@ -86,21 +92,27 @@ fn activate(app: *gtk.Application, _: ?*anyopaque) callconv(.c) void {
     };
     gtk.TextBuffer.setText(base_buffer.as(gtk.TextBuffer), text.ptr, -1);
 
-    const bv = gpa.create(ui.BaseView) catch return;
-    bv.* = ui.BaseView.new(gpa);
-    base_view = bv;
-    bv.render(f, base_box) catch |err| {
+    const view = gpa.create(ui.BaseView) catch return;
+    view.* = ui.BaseView.new(gpa);
+    base_view = view;
+    view.render(f, base_box) catch |err| {
         std.log.err("Failed to render base: {}", .{err});
         return;
     };
-    bv.onConflictSelected(&onConflictSelected) catch |err| {
+    view.onConflictSelected(&onConflictSelected) catch |err| {
         std.log.err("Failed to register onConflictSelected callback: {}", .{err});
         return;
     };
 }
 
-fn onConflictSelected(index: u32) void {
-    std.log.info("index: {d}", .{index});
+fn onConflictSelected(conflict_index: u32) void {
+    std.log.info("index: {d}", .{conflict_index});
+    const view = gpa.create(ui.RevisionsView) catch unreachable;
+    view.* = ui.RevisionsView.new(gpa, conflict_index);
+    revisions_view = view;
+    if (file) |f| {
+        view.render(f, revisions_box) catch unreachable;
+    }
 }
 
 fn closeWindow(_: *gtk.Button, window: *gtk.ApplicationWindow) callconv(.c) void {
@@ -108,28 +120,27 @@ fn closeWindow(_: *gtk.Button, window: *gtk.ApplicationWindow) callconv(.c) void
 }
 
 fn buildUI(window: *gtk.Window) void {
-    var hbox = gtk.Box.new(.horizontal, 5);
-    // gtk.Widget.setMarginBottom(hbox.as(gtk.Widget), 10);
-    // gtk.Widget.setMarginTop(hbox.as(gtk.Widget), 10);
-    // gtk.Widget.setMarginEnd(hbox.as(gtk.Widget), 10);
-    // gtk.Widget.setMarginStart(hbox.as(gtk.Widget), 10);
+    var hbox = gtk.Box.new(.horizontal, 10);
     gtk.Widget.setHexpand(hbox.as(gtk.Widget), 1);
     gtk.Box.setHomogeneous(hbox, 1);
 
+    // base column
     base_box = gtk.Box.new(.vertical, 5);
-    base_revision_widget = ui.RevisionWidget.new(base_box);
-    gtk.Widget.addCssClass(base_box.as(gtk.Widget), "left-box");
+    base_revision_widget = ui.RevisionWidget.new(base_box, null);
+    gtk.Widget.addCssClass(base_box.as(gtk.Widget), "base-box");
 
-    markers_box = gtk.Box.new(.vertical, 5);
-    _ = ui.RevisionWidget.new(markers_box);
-    gtk.Widget.addCssClass(markers_box.as(gtk.Widget), "middle-box");
+    // revision column
+    revisions_box = gtk.Box.new(.vertical, 5);
+    // _ = ui.RevisionWidget.new(revisions_box, null);
+    gtk.Widget.addCssClass(revisions_box.as(gtk.Widget), "revisions-box");
 
+    // output column
     var right_box = gtk.Box.new(.vertical, 5);
-    _ = ui.RevisionWidget.new(right_box);
-    gtk.Widget.addCssClass(right_box.as(gtk.Widget), "right-box");
+    // _ = ui.RevisionWidget.new(right_box, null);
+    gtk.Widget.addCssClass(right_box.as(gtk.Widget), "output-box");
 
     hbox.append(base_box.as(gtk.Widget));
-    hbox.append(markers_box.as(gtk.Widget));
+    hbox.append(revisions_box.as(gtk.Widget));
     hbox.append(right_box.as(gtk.Widget));
 
     gtk.Window.setChild(window, hbox.as(gtk.Widget));

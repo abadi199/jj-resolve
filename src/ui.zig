@@ -7,11 +7,14 @@ const gtksource = @import("gtksource");
 const parser = @import("parser.zig");
 
 pub const RevisionWidget = struct {
+    widget: *gtk.Widget,
     change_label: *gtk.Label,
     commit_label: *gtk.Label,
     desc_label: *gtk.Label,
+    content: ?*gtk.Widget,
+    content_box: *gtk.Box,
 
-    pub fn new(parent: *gtk.Box) @This() {
+    pub fn new(parent: *gtk.Box, content: ?*gtk.Widget) @This() {
         // change label
         const change_box = gtk.Box.new(.horizontal, 0);
         const change = gtk.Label.new("Change ID: ");
@@ -39,21 +42,36 @@ pub const RevisionWidget = struct {
         desc_box.append(desc.as(gtk.Widget));
         desc_box.append(desc_label.as(gtk.Widget));
 
-        var vbox = gtk.Box.new(.vertical, 0);
+        // header box
+        var header_box = gtk.Box.new(.vertical, 0);
+        gtk.Widget.addCssClass(header_box.as(gtk.Widget), "revision-header-box");
         var hbox = gtk.Box.new(.horizontal, 0);
         gtk.Widget.setHexpand(hbox.as(gtk.Widget), 1);
 
         hbox.append(change_box.as(gtk.Widget));
         hbox.append(commit_box.as(gtk.Widget));
-        vbox.append(hbox.as(gtk.Widget));
-        vbox.append(desc_box.as(gtk.Widget));
+        header_box.append(hbox.as(gtk.Widget));
+        header_box.append(desc_box.as(gtk.Widget));
 
-        parent.append(vbox.as(gtk.Widget));
+        var content_box = gtk.Box.new(.vertical, 0);
+        header_box.append(content_box.as(gtk.Widget));
+        if (content) |c| {
+            content_box.append(c);
+        }
+
+        // frame
+        var frame = gtk.Frame.new(null);
+        frame.setChild(header_box.as(gtk.Widget));
+        gtk.Widget.addCssClass(frame.as(gtk.Widget), "revision-frame");
+        parent.append(frame.as(gtk.Widget));
 
         return @This(){
+            .widget = frame.as(gtk.Widget),
             .change_label = change_label,
             .commit_label = commit_label,
             .desc_label = desc_label,
+            .content = content,
+            .content_box = content_box,
         };
     }
 
@@ -64,6 +82,14 @@ pub const RevisionWidget = struct {
         self.commit_label.setLabel(commit_text);
         const desc_text = try allocator.dupeZ(u8, revision.description);
         self.desc_label.setLabel(desc_text);
+    }
+
+    pub fn setContent(self: @This(), content: *gtk.Widget) void {
+        if (self.content) |old_content| {
+            self.content_box.remove(old_content);
+        }
+
+        self.content_box.append(content);
     }
 
     pub fn deinit(self: *@This()) void {
@@ -110,9 +136,6 @@ pub const BaseView = struct {
                     gtk.TextBuffer.setText(buffer.as(gtk.TextBuffer), content, -1);
                     const view = createCodeView(buffer);
                     box.append(view.as(gtk.Widget));
-                    gtksource.View.setHighlightCurrentLine(view, 0);
-                    gtk.TextView.setEditable(view.as(gtk.TextView), 0);
-                    gtk.TextView.setCursorVisible(view.as(gtk.TextView), 0);
                 },
                 .conflict => |*conflict| {
                     var conflict_box = gtk.Box.new(.vertical, 0);
@@ -173,35 +196,10 @@ pub const BaseView = struct {
         }
     }
 
-    pub fn createCodeView(buffer: *gtksource.Buffer) *gtksource.View {
-        const lang_manager = gtksource.LanguageManager.getDefault();
-        if (gtksource.LanguageManager.getLanguage(lang_manager, "typescript")) |language| {
-            gtksource.Buffer.setLanguage(buffer, language);
-        }
-
-        const scheme_manager = gtksource.StyleSchemeManager.getDefault();
-        if (gtksource.StyleSchemeManager.getScheme(scheme_manager, "Adwaita-dark")) |scheme| {
-            gtksource.Buffer.setStyleScheme(buffer, scheme);
-        }
-
-        // Create the GtkSourceView with the buffer
-        var source_view = gtksource.View.newWithBuffer(buffer.as(gtksource.Buffer));
-        gtksource.View.setShowLineNumbers(source_view, 0); // show line numbers
-        gtksource.View.setHighlightCurrentLine(source_view, 1); // highlight current line
-        gtksource.View.setTabWidth(source_view, 4);
-        gtk.TextView.setMonospace(source_view.as(gtk.TextView), 1); // use monospace font
-
-        // Wrap the source view in a scrolled window
-        // var scrolled_window = gtk.ScrolledWindow.new();
-        // gtk.ScrolledWindow.setChild(scrolled_window, source_view.as(gtk.Widget));
-        // gtk.Widget.setVexpand(scrolled_window.as(gtk.Widget), 1); // fill vertical space
-        // gtk.Widget.setHexpand(scrolled_window.as(gtk.Widget), 1); // fill horizontal space
-
-        // box.append(source_view.as(gtk.Widget));
-
-        return source_view;
-    }
-
+    const ToggleValue = struct {
+        conflict: *parser.Conflict,
+        base_view: *BaseView,
+    };
     fn onToggledRadioActivate(button: *gtk.CheckButton, conflict_ptr: ?*anyopaque) callconv(.c) void {
         if (button.getActive() == 0) {
             return;
@@ -219,7 +217,79 @@ pub const BaseView = struct {
     }
 };
 
-const ToggleValue = struct {
-    conflict: *parser.Conflict,
-    base_view: *BaseView,
+pub const RevisionsView = struct {
+    conflict_index: u32,
+    arena: std.heap.ArenaAllocator,
+    callbacks: std.ArrayList(*const fn ([]u8) void),
+
+    pub fn new(allocator: std.mem.Allocator, conflict_index: u32) RevisionsView {
+        return RevisionsView{
+            .conflict_index = conflict_index,
+            .arena = std.heap.ArenaAllocator.init(allocator),
+            .callbacks = std.ArrayList(*const fn ([]u8) void).empty,
+        };
+    }
+
+    pub fn render(self: *RevisionsView, file: parser.ParsedFile, parent: *gtk.Box) !void {
+        removeAllChildren(parent);
+        const allocator = self.arena.allocator();
+        const scroll_window = gtk.ScrolledWindow.new();
+        gtk.Widget.setVexpand(scroll_window.as(gtk.Widget), 1);
+        gtk.Widget.setHexpand(scroll_window.as(gtk.Widget), 1);
+        const box = gtk.Box.new(.vertical, 10);
+        scroll_window.setChild(box.as(gtk.Widget));
+        parent.append(scroll_window.as(gtk.Widget));
+
+        const revisions = try file.getRevisions(allocator, self.conflict_index);
+        for (revisions) |revision| {
+            try self.renderRevision(file, revision, box);
+        }
+    }
+
+    fn renderRevision(self: *RevisionsView, file: parser.ParsedFile, revision: parser.Revision, parent: *gtk.Box) !void {
+        const allocator = self.arena.allocator();
+        // code view
+        const buffer = gtksource.Buffer.new(null);
+        const content = try file.getConflictContent(allocator, self.conflict_index, revision);
+        const content_z = try allocator.dupeZ(u8, content);
+        gtk.TextBuffer.setText(buffer.as(gtk.TextBuffer), content_z, -1);
+        const view = createCodeView(buffer);
+
+        // revision widget
+        const rev_widget: RevisionWidget = .new(parent, view.as(gtk.Widget));
+        try rev_widget.setRevision(allocator, revision);
+    }
+
+    pub fn deinit(self: RevisionsView) void {
+        self.arena.deinit();
+    }
 };
+
+fn removeAllChildren(box: *gtk.Box) void {
+    while (gtk.Widget.getFirstChild(box.as(gtk.Widget))) |child| {
+        box.remove(child);
+    }
+}
+
+pub fn createCodeView(buffer: *gtksource.Buffer) *gtksource.View {
+    const lang_manager = gtksource.LanguageManager.getDefault();
+    if (gtksource.LanguageManager.getLanguage(lang_manager, "typescript")) |language| {
+        gtksource.Buffer.setLanguage(buffer, language);
+    }
+
+    const scheme_manager = gtksource.StyleSchemeManager.getDefault();
+    if (gtksource.StyleSchemeManager.getScheme(scheme_manager, "Adwaita-dark")) |scheme| {
+        gtksource.Buffer.setStyleScheme(buffer, scheme);
+    }
+
+    // Create the GtkSourceView with the buffer
+    var source_view = gtksource.View.newWithBuffer(buffer.as(gtksource.Buffer));
+    gtksource.View.setShowLineNumbers(source_view, 0); // show line numbers
+    gtksource.View.setHighlightCurrentLine(source_view, 0); // highlight current line
+    gtksource.View.setTabWidth(source_view, 4);
+    gtk.TextView.setMonospace(source_view.as(gtk.TextView), 1); // use monospace font
+    gtk.TextView.setEditable(source_view.as(gtk.TextView), 0);
+    gtk.TextView.setCursorVisible(source_view.as(gtk.TextView), 0);
+
+    return source_view;
+}

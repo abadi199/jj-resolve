@@ -425,6 +425,41 @@ pub const ParsedFile = struct {
         return null;
     }
 
+    pub fn getConflictContent(self: ParsedFile, allocator: mem.Allocator, conflict_index: u32, revision: Revision) ![]const u8 {
+        for (self.segments) |segment| {
+            switch (segment) {
+                .conflict => |conflict| {
+                    if (conflict.index != conflict_index) {
+                        continue;
+                    }
+                    for (conflict.conflict_markers) |conflict_marker| {
+                        switch (conflict_marker) {
+                            .diff => |diff| {
+                                if (!diff.to.eql(revision)) {
+                                    continue;
+                                }
+
+                                return try diff.getContent(allocator, revision.commitID);
+                            },
+                            .snapshot => |snapshot| {
+                                if (!snapshot.commit.eql(revision)) {
+                                    continue;
+                                }
+
+                                return try snapshot.getContent(allocator);
+                            },
+                        }
+                    }
+                },
+                .no_conflict => {
+                    continue;
+                },
+            }
+        }
+
+        return "";
+    }
+
     pub fn getContent(self: ParsedFile, allocator: mem.Allocator, revision: Revision) ![]const u8 {
         var buffer = std.ArrayList(u8).empty;
         for (self.segments, 0..) |segment, i| {
@@ -494,7 +529,7 @@ pub const ParsedFile = struct {
         return try buffer.toOwnedSlice(allocator);
     }
 
-    pub fn getRevisions(self: ParsedFile, allocator: mem.Allocator) ![]Revision {
+    pub fn getRevisions(self: ParsedFile, allocator: mem.Allocator, conflict_index: u32) ![]Revision {
         var revisions: std.ArrayHashMap(Revision, void, Revision.HashContext, false) = .init(allocator);
         defer revisions.deinit();
 
@@ -502,6 +537,9 @@ pub const ParsedFile = struct {
             switch (segment) {
                 .no_conflict => {},
                 .conflict => |conflict| {
+                    if (conflict.index != conflict_index) {
+                        continue;
+                    }
                     for (conflict.conflict_markers) |conflict_marker| {
                         switch (conflict_marker) {
                             .diff => |diff| {
@@ -525,6 +563,33 @@ pub const ParsedFile = struct {
     }
 };
 
+test "ParsedFile.getConflictContent" {
+    const allocator = std.testing.allocator;
+    var parsed_file = try parse(allocator,
+        \\function before() {
+        \\<<<<<<< conflict 1 of 3
+        \\%%%%%%% diff from: ulopzqqq 6606ba58 "a"
+        \\\\\\\\\        to: ltrosymo 096e9f1c "b+c" (rebased revision)
+        \\-  console.log("before test");
+        \\+  console.log("before main");
+        \\+++++++ vsqszzzy af5bacc0 "c"
+        \\  console.log("BEFORE TEST");
+        \\>>>>>>> conflict 1 of 3 ends
+        \\}
+    );
+    defer parsed_file.deinit(allocator);
+
+    const output = try parsed_file.getConflictContent(allocator, 1, Revision{
+        .changeID = "ltrosymo",
+        .commitID = "096e9f1c",
+        .description = "b+c",
+    });
+    defer allocator.free(output);
+    try testing.expectEqualStrings(output,
+        \\  console.log("before main");
+    );
+}
+
 test "ParsedFile.getRevisions" {
     const allocator = std.testing.allocator;
     var parsed_file = try parse(allocator,
@@ -541,7 +606,7 @@ test "ParsedFile.getRevisions" {
     );
     defer parsed_file.deinit(allocator);
 
-    const output = try parsed_file.getRevisions(allocator);
+    const output = try parsed_file.getRevisions(allocator, 1);
     defer allocator.free(output);
 
     try testing.expectEqual(output.len, 2);

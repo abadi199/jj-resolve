@@ -1,12 +1,21 @@
-.left-box {
+.base-box {
     /*background-color: #ff0000;*/
 }
 
-.middle-box {
+.revisions-box {
     /*background-color: #0000ff;*/
 }
+.revision-header-box {
+    background-color: blue;
+}
 
-.right-box {
+.revision-frame {
+    border: 2px solid blue;
+    border-radius: 0;
+    padding: 0;
+}
+
+.output-box {
     /*background-color: #00ff00;*/
 }
 
