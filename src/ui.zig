@@ -72,18 +72,22 @@ pub const RevisionWidget = struct {
 };
 
 pub const BaseView = struct {
-    selected_conflict_index: ?u32,
     arena: std.heap.ArenaAllocator,
+    callbacks: std.ArrayList(*const fn (u32) void),
 
     pub fn new(allocator: std.mem.Allocator) BaseView {
         return BaseView{
-            .selected_conflict_index = null,
             .arena = std.heap.ArenaAllocator.init(allocator),
+            .callbacks = std.ArrayList(*const fn (u32) void).empty,
         };
     }
 
     pub fn deinit(self: BaseView) void {
         self.arena.deinit();
+    }
+
+    pub fn onConflictSelected(self: *BaseView, comptime callback: *const fn (u32) void) !void {
+        try self.callbacks.append(self.arena.allocator(), callback);
     }
 
     pub fn render(self: *BaseView, file: parser.ParsedFile, parent: *gtk.Box) !void {
@@ -197,22 +201,25 @@ pub const BaseView = struct {
 
         return source_view;
     }
+
+    fn onToggledRadioActivate(button: *gtk.CheckButton, conflict_ptr: ?*anyopaque) callconv(.c) void {
+        if (button.getActive() == 0) {
+            return;
+        }
+
+        if (conflict_ptr) |ptr| {
+            const value: *ToggleValue = @ptrCast(@alignCast(ptr));
+            std.log.info("Conflict {any} activated", .{value.conflict.index});
+            for (value.base_view.callbacks.items) |callback| {
+                callback(value.conflict.index);
+            }
+        } else {
+            std.log.err("Conflict pointer is null", .{});
+        }
+    }
 };
 
 const ToggleValue = struct {
     conflict: *parser.Conflict,
     base_view: *BaseView,
 };
-fn onToggledRadioActivate(button: *gtk.CheckButton, conflict_ptr: ?*anyopaque) callconv(.c) void {
-    if (button.getActive() == 0) {
-        return;
-    }
-
-    if (conflict_ptr) |ptr| {
-        const value: *ToggleValue = @ptrCast(@alignCast(ptr));
-        std.log.info("Conflict {any} activated", .{value.conflict.index});
-        value.base_view.*.selected_conflict_index = value.conflict.index;
-    } else {
-        std.log.err("Conflict pointer is null ", .{});
-    }
-}
