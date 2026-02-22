@@ -10,6 +10,7 @@ const ui = @import("ui.zig");
 
 var base_revision_widget: ?ui.RevisionWidget = null;
 var base_buffer: *gtksource.Buffer = undefined;
+var base_view: ?ui.BaseView = null;
 
 pub fn main() void {
     base_buffer = gtksource.Buffer.new(null);
@@ -28,6 +29,10 @@ fn deinit() void {
     }
 
     base_buffer.unref();
+
+    if (base_view) |v| {
+        v.deinit();
+    }
 }
 
 fn activate(app: *gtk.Application, _: ?*anyopaque) callconv(.c) void {
@@ -43,7 +48,7 @@ fn activate(app: *gtk.Application, _: ?*anyopaque) callconv(.c) void {
     var window = gtk.ApplicationWindow.new(app);
     gtk.Window.setTitle(window.as(gtk.Window), "Window");
     gtk.Window.setDefaultSize(window.as(gtk.Window), 800, 600);
-    gtk.Window.maximize(window.as(gtk.Window));
+    // gtk.Window.maximize(window.as(gtk.Window));
 
     // gtk.Window.setChild(window.as(gtk.Window), scrolled_window.as(gtk.Widget));
     createColumns(window.as(gtk.Window));
@@ -75,8 +80,8 @@ fn activate(app: *gtk.Application, _: ?*anyopaque) callconv(.c) void {
     };
     gtk.TextBuffer.setText(base_buffer.as(gtk.TextBuffer), text.ptr, -1);
 
-    var base_view = ui.BaseView.new();
-    base_view.render(gpa, f, left_box) catch |err| {
+    base_view = ui.BaseView.new(gpa);
+    base_view.?.render(f, left_box) catch |err| {
         std.log.err("Failed to render base: {}", .{err});
         return;
     };

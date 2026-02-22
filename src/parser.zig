@@ -621,7 +621,7 @@ test "toString" {
 }
 
 // marker: <<<<<<<
-const Conflict = struct {
+pub const Conflict = struct {
     index: u32,
     total: u32,
     conflict_markers: []const ConflictMarker,

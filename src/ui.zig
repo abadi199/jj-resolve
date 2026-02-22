@@ -73,14 +73,22 @@ pub const RevisionWidget = struct {
 
 pub const BaseView = struct {
     selected_conflict_index: ?u32,
+    arena: std.heap.ArenaAllocator,
 
-    pub fn new() BaseView {
+    pub fn new(allocator: std.mem.Allocator) BaseView {
         return BaseView{
             .selected_conflict_index = null,
+            .arena = std.heap.ArenaAllocator.init(allocator),
         };
     }
 
-    pub fn render(_: *BaseView, allocator: std.mem.Allocator, file: parser.ParsedFile, parent: *gtk.Box) !void {
+    pub fn deinit(self: BaseView) void {
+        self.arena.deinit();
+    }
+
+    pub fn render(self: *BaseView, file: parser.ParsedFile, parent: *gtk.Box) !void {
+        _ = self.arena.reset(.retain_capacity);
+        const allocator = self.arena.allocator();
         var scroll_window = gtk.ScrolledWindow.new();
         parent.append(scroll_window.as(gtk.Widget));
 
@@ -89,8 +97,9 @@ pub const BaseView = struct {
         gtk.Widget.setVexpand(box.as(gtk.Widget), 1);
         gtk.Widget.setHexpand(box.as(gtk.Widget), 1);
         scroll_window.setChild(box.as(gtk.Widget));
-        for (file.segments) |segment| {
-            switch (segment) {
+        var radio_group_leader: ?*gtk.CheckButton = null;
+        for (file.segments) |*segment| {
+            switch (segment.*) {
                 .no_conflict => |no_conflict| {
                     const buffer = gtksource.Buffer.new(null);
                     const content = try allocator.dupeZ(u8, try no_conflict.toString(allocator));
@@ -101,23 +110,41 @@ pub const BaseView = struct {
                     gtk.TextView.setEditable(view.as(gtk.TextView), 0);
                     gtk.TextView.setCursorVisible(view.as(gtk.TextView), 0);
                 },
-                .conflict => |conflict| {
+                .conflict => |*conflict| {
                     var conflict_box = gtk.Box.new(.vertical, 0);
 
                     gtk.Widget.setMarginBottom(conflict_box.as(gtk.Widget), 2);
                     gtk.Widget.addCssClass(conflict_box.as(gtk.Widget), "conflict-box");
                     box.append(conflict_box.as(gtk.Widget));
 
-                    var conflict_label = gtk.Label.new(try std.fmt.allocPrintSentinel(
+                    // conflict radio
+                    var conflict_radio = gtk.CheckButton.newWithLabel(try std.fmt.allocPrintSentinel(
                         allocator,
                         "Conflict {d} of {d}",
                         .{ conflict.index, conflict.total },
                         0,
                     ));
-                    conflict_label.setXalign(0.0);
-                    gtk.Widget.addCssClass(conflict_label.as(gtk.Widget), "conflict-label");
-                    gtk.Widget.setHexpand(conflict_label.as(gtk.Widget), 1);
-                    conflict_box.append(conflict_label.as(gtk.Widget));
+                    if (radio_group_leader) |leader| {
+                        gtk.CheckButton.setGroup(conflict_radio, leader);
+                    } else {
+                        radio_group_leader = conflict_radio;
+                    }
+                    const toggle_value = try allocator.create(ToggleValue);
+                    toggle_value.* = ToggleValue{
+                        .base_view = self,
+                        .conflict = @constCast(conflict),
+                    };
+
+                    _ = gtk.CheckButton.signals.toggled.connect(
+                        conflict_radio,
+                        ?*anyopaque,
+                        &onToggledRadioActivate,
+                        @constCast(toggle_value),
+                        .{},
+                    );
+                    gtk.Widget.addCssClass(conflict_radio.as(gtk.Widget), "conflict-radio");
+                    gtk.Widget.setHexpand(conflict_radio.as(gtk.Widget), 1);
+                    conflict_box.append(conflict_radio.as(gtk.Widget));
 
                     for (conflict.conflict_markers) |marker| {
                         switch (marker) {
@@ -171,3 +198,21 @@ pub const BaseView = struct {
         return source_view;
     }
 };
+
+const ToggleValue = struct {
+    conflict: *parser.Conflict,
+    base_view: *BaseView,
+};
+fn onToggledRadioActivate(button: *gtk.CheckButton, conflict_ptr: ?*anyopaque) callconv(.c) void {
+    if (button.getActive() == 0) {
+        return;
+    }
+
+    if (conflict_ptr) |ptr| {
+        const value: *ToggleValue = @ptrCast(@alignCast(ptr));
+        std.log.info("Conflict {any} activated", .{value.conflict.index});
+        value.base_view.*.selected_conflict_index = value.conflict.index;
+    } else {
+        std.log.err("Conflict pointer is null ", .{});
+    }
+}

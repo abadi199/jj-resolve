@@ -10,9 +10,10 @@
     /*background-color: #00ff00;*/
 }
 
-.conflict-label {
+.conflict-radio {
     background-color: #990000;
     padding: 2px;
+    border-radius: 0;
 }
 .conflict-frame {
     border: 1px solid #990000;
