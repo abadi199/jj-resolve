@@ -5,6 +5,7 @@ const gio = @import("gio");
 const gtk = @import("gtk");
 const gtksource = @import("gtksource");
 const parser = @import("parser.zig");
+const output = @import("output.zig");
 
 pub const RevisionWidget = struct {
     widget: *gtk.Widget,
@@ -136,6 +137,7 @@ pub const BaseView = struct {
         _ = self.arena.reset(.retain_capacity);
         const allocator = self.arena.allocator();
         var scroll_window = gtk.ScrolledWindow.new();
+        gtk.Widget.setVexpand(scroll_window.as(gtk.Widget), 1);
         parent.append(scroll_window.as(gtk.Widget));
 
         var box = gtk.Box.new(.vertical, 0);
@@ -200,9 +202,6 @@ pub const BaseView = struct {
                                 const view = createCodeView(buffer);
                                 frame.setChild(view.as(gtk.Widget));
                                 conflict_box.append(frame.as(gtk.Widget));
-                                gtksource.View.setHighlightCurrentLine(view, 0);
-                                gtk.TextView.setEditable(view.as(gtk.TextView), 0);
-                                gtk.TextView.setCursorVisible(view.as(gtk.TextView), 0);
                             },
                             .snapshot => {},
                         }
@@ -236,13 +235,13 @@ pub const BaseView = struct {
 pub const RevisionsView = struct {
     conflict_index: u32,
     arena: std.heap.ArenaAllocator,
-    callbacks: std.ArrayList(*const fn (u32, []u8) void),
+    callbacks: std.ArrayList(*const fn (u32, revision: parser.Revision) void),
 
     pub fn new(allocator: std.mem.Allocator, conflict_index: u32) RevisionsView {
         return RevisionsView{
             .conflict_index = conflict_index,
             .arena = std.heap.ArenaAllocator.init(allocator),
-            .callbacks = std.ArrayList(*const fn (u32, []u8) void).empty,
+            .callbacks = std.ArrayList(*const fn (u32, parser.Revision) void).empty,
         };
     }
 
@@ -283,7 +282,7 @@ pub const RevisionsView = struct {
         }
     }
 
-    pub fn onRevisionSelected(self: *RevisionsView, comptime callback: *const fn (u32, []u8) void) !void {
+    pub fn onRevisionSelected(self: *RevisionsView, comptime callback: *const fn (u32, parser.Revision) void) !void {
         try self.callbacks.append(self.arena.allocator(), callback);
     }
 
@@ -300,7 +299,7 @@ pub const RevisionsView = struct {
             const value: *ToggleValue = @ptrCast(@alignCast(ptr));
             std.log.info("Revision {s} activated", .{value.revision.commitID});
             for (value.self.callbacks.items) |callback| {
-                callback(value.self.conflict_index, @constCast(value.revision.commitID));
+                callback(value.self.conflict_index, value.revision.*);
             }
         } else {
             std.log.err("Conflict pointer is null", .{});
@@ -327,6 +326,84 @@ pub const RevisionsView = struct {
         self.arena.deinit();
     }
 };
+
+pub const OutputView = struct {
+    arena: std.heap.ArenaAllocator,
+    output_file: *output.OutputFile,
+    buffers: []*gtksource.Buffer,
+
+    pub fn new(allocator: std.mem.Allocator, file: parser.ParsedFile) !OutputView {
+        var arena = std.heap.ArenaAllocator.init(allocator);
+        const arena_allocator = arena.allocator();
+        var output_file = try output.OutputFile.from(arena_allocator, file);
+        std.log.debug("output_file: {}", .{output_file});
+        return .{
+            .arena = arena,
+            .output_file = &output_file,
+            .buffers = &[0]*gtksource.Buffer{},
+        };
+    }
+
+    pub fn render(self: *OutputView, parent: *gtk.Box) !void {
+        const allocator = self.arena.allocator();
+        var frame = gtk.Frame.new("Output");
+        gtk.Widget.setVexpand(frame.as(gtk.Widget), 1);
+        gtk.Widget.addCssClass(frame.as(gtk.Widget), "output-frame");
+        parent.append(frame.as(gtk.Widget));
+
+        var scroll_window = gtk.ScrolledWindow.new();
+        var box = gtk.Box.new(.vertical, 0);
+        scroll_window.setChild(box.as(gtk.Widget));
+        frame.setChild(scroll_window.as(gtk.Widget));
+
+        var buffers = std.ArrayList(*gtksource.Buffer).empty;
+
+        for (self.output_file.segments) |segment| {
+            switch (segment) {
+                .no_conflict => |no_conflict| {
+                    std.log.debug("no_conflict: {s}", .{no_conflict.text});
+                    var buffer = gtksource.Buffer.new(null);
+                    const text = try allocator.dupeZ(u8, no_conflict.text);
+                    std.log.debug("text:{s}", .{no_conflict.text});
+                    gtk.TextBuffer.setText(buffer.as(gtk.TextBuffer), text, -1);
+                    const view = createCodeView(buffer);
+                    gtk.TextView.setEditable(view.as(gtk.TextView), 1);
+                    gtk.TextView.setCursorVisible(view.as(gtk.TextView), 1);
+                    box.append(view.as(gtk.Widget));
+                },
+                .conflict => |conflict| {
+                    var conflict_frame = gtk.Frame.new(try std.fmt.allocPrintSentinel(allocator, "Conflict {d} of {d}", .{ conflict.conflict_index, conflict.total }, 0));
+                    var conflict_box = gtk.Box.new(.vertical, 0);
+                    box.append(conflict_frame.as(gtk.Widget));
+                    conflict_frame.setChild(conflict_box.as(gtk.Widget));
+
+                    gtk.Widget.addCssClass(conflict_box.as(gtk.Widget), "conflict-box");
+
+                    gtk.Widget.addCssClass(conflict_frame.as(gtk.Widget), "conflict-frame");
+                    conflict_box.append(conflict_frame.as(gtk.Widget));
+
+                    const buffer = gtksource.Buffer.new(null);
+                    try buffers.append(allocator, buffer);
+                    const code_view = createCodeView(buffer);
+                    gtksource.View.setHighlightCurrentLine(code_view, 1);
+                    gtk.TextView.setEditable(code_view.as(gtk.TextView), 1);
+                    gtk.TextView.setCursorVisible(code_view.as(gtk.TextView), 1);
+                    conflict_box.append(code_view.as(gtk.Widget));
+                },
+            }
+        }
+
+        self.buffers = try buffers.toOwnedSlice(allocator);
+    }
+
+    pub fn setContent(self: *OutputView, allocator: std.mem.Allocator, conflict_index: u32, content: []const u8) !void {
+        const buffer = self.buffers[conflict_index - 1];
+        const text_z = try allocator.dupeZ(u8, content);
+        gtk.TextBuffer.setText(buffer.as(gtk.TextBuffer), text_z, -1);
+    }
+};
+
+// Helpers
 
 fn removeAllChildren(box: *gtk.Box) void {
     while (gtk.Widget.getFirstChild(box.as(gtk.Widget))) |child| {

@@ -7,6 +7,7 @@ const gdk = @import("gdk");
 const gtksource = @import("gtksource");
 const parser = @import("parser.zig");
 const ui = @import("ui.zig");
+const output = @import("output.zig");
 
 // Base view state
 var base_box: *gtk.Box = undefined;
@@ -17,6 +18,10 @@ var base_view: ?*ui.BaseView = null;
 // Revisions view state
 var revisions_box: *gtk.Box = undefined;
 var revisions_view: ?*ui.RevisionsView = null;
+
+// Output view state
+var output_box: *gtk.Box = undefined;
+var output_view: ?*ui.OutputView = null;
 
 pub fn main() void {
     base_buffer = gtksource.Buffer.new(null);
@@ -92,17 +97,18 @@ fn activate(app: *gtk.Application, _: ?*anyopaque) callconv(.c) void {
     };
     gtk.TextBuffer.setText(base_buffer.as(gtk.TextBuffer), text.ptr, -1);
 
-    const view = gpa.create(ui.BaseView) catch return;
+    // create base view
+    const view = gpa.create(ui.BaseView) catch unreachable;
     view.* = ui.BaseView.new(gpa);
     base_view = view;
-    view.render(f, base_box) catch |err| {
-        std.log.err("Failed to render base: {}", .{err});
-        return;
-    };
-    view.onConflictSelected(&onConflictSelected) catch |err| {
-        std.log.err("Failed to register onConflictSelected callback: {}", .{err});
-        return;
-    };
+    view.render(f, base_box) catch @panic("Failed to render base");
+    view.onConflictSelected(&onConflictSelected) catch @panic("Failed to register onConflictSelected callback");
+
+    // create output view
+    const oview = gpa.create(ui.OutputView) catch unreachable;
+    oview.* = ui.OutputView.new(gpa, f) catch @panic("Failed to create OutputView");
+    output_view = oview;
+    oview.render(output_box) catch @panic("Failed to render output_view");
 }
 
 fn onConflictSelected(conflict_index: u32) void {
@@ -115,8 +121,13 @@ fn onConflictSelected(conflict_index: u32) void {
         view.onRevisionSelected(&onRevisionSelected) catch unreachable;
     }
 }
-fn onRevisionSelected(conflict_index: u32, commitID: []const u8) void {
-    std.log.info("onRevisionSelected: {s}, {d}", .{ commitID, conflict_index });
+fn onRevisionSelected(conflict_index: u32, revision: parser.Revision) void {
+    if (output_view) |oview| {
+        if (file) |f| {
+            const content = f.getConflictContent(gpa, conflict_index, revision) catch @panic("Failed to get content");
+            oview.setContent(gpa, conflict_index, content) catch @panic("Failed to set content");
+        }
+    }
 }
 
 fn closeWindow(_: *gtk.Button, window: *gtk.ApplicationWindow) callconv(.c) void {
@@ -139,13 +150,13 @@ fn buildUI(window: *gtk.Window) void {
     gtk.Widget.addCssClass(revisions_box.as(gtk.Widget), "revisions-box");
 
     // output column
-    var right_box = gtk.Box.new(.vertical, 5);
+    output_box = gtk.Box.new(.vertical, 5);
     // _ = ui.RevisionWidget.new(right_box, null);
-    gtk.Widget.addCssClass(right_box.as(gtk.Widget), "output-box");
+    gtk.Widget.addCssClass(output_box.as(gtk.Widget), "output-box");
 
     hbox.append(base_box.as(gtk.Widget));
     hbox.append(revisions_box.as(gtk.Widget));
-    hbox.append(right_box.as(gtk.Widget));
+    hbox.append(output_box.as(gtk.Widget));
 
     gtk.Window.setChild(window, hbox.as(gtk.Widget));
 }
