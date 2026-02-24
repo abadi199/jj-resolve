@@ -13,8 +13,12 @@ pub const RevisionWidget = struct {
     desc_label: *gtk.Label,
     content: ?*gtk.Widget,
     content_box: *gtk.Box,
+    check_button: ?*gtk.CheckButton,
 
-    pub fn new(parent: *gtk.Box, content: ?*gtk.Widget) @This() {
+    const Option = struct {
+        is_radio: bool,
+    };
+    pub fn new(parent: *gtk.Box, content: ?*gtk.Widget, option: Option) @This() {
         // change label
         const change_box = gtk.Box.new(.horizontal, 0);
         const change = gtk.Label.new("Change ID: ");
@@ -50,6 +54,7 @@ pub const RevisionWidget = struct {
 
         hbox.append(change_box.as(gtk.Widget));
         hbox.append(commit_box.as(gtk.Widget));
+
         header_box.append(hbox.as(gtk.Widget));
         header_box.append(desc_box.as(gtk.Widget));
 
@@ -63,7 +68,17 @@ pub const RevisionWidget = struct {
         var frame = gtk.Frame.new(null);
         frame.setChild(header_box.as(gtk.Widget));
         gtk.Widget.addCssClass(frame.as(gtk.Widget), "revision-frame");
-        parent.append(frame.as(gtk.Widget));
+
+        var check_button: ?*gtk.CheckButton = null;
+        if (option.is_radio) {
+            // check_button
+            check_button = gtk.CheckButton.new();
+            gtk.Widget.addCssClass(check_button.?.as(gtk.Widget), "revision-check-button");
+            check_button.?.setChild(frame.as(gtk.Widget));
+            parent.append(check_button.?.as(gtk.Widget));
+        } else {
+            parent.append(frame.as(gtk.Widget));
+        }
 
         return @This(){
             .widget = frame.as(gtk.Widget),
@@ -72,6 +87,7 @@ pub const RevisionWidget = struct {
             .desc_label = desc_label,
             .content = content,
             .content_box = content_box,
+            .check_button = check_button,
         };
     }
 
@@ -220,13 +236,13 @@ pub const BaseView = struct {
 pub const RevisionsView = struct {
     conflict_index: u32,
     arena: std.heap.ArenaAllocator,
-    callbacks: std.ArrayList(*const fn ([]u8) void),
+    callbacks: std.ArrayList(*const fn (u32, []u8) void),
 
     pub fn new(allocator: std.mem.Allocator, conflict_index: u32) RevisionsView {
         return RevisionsView{
             .conflict_index = conflict_index,
             .arena = std.heap.ArenaAllocator.init(allocator),
-            .callbacks = std.ArrayList(*const fn ([]u8) void).empty,
+            .callbacks = std.ArrayList(*const fn (u32, []u8) void).empty,
         };
     }
 
@@ -241,12 +257,57 @@ pub const RevisionsView = struct {
         parent.append(scroll_window.as(gtk.Widget));
 
         const revisions = try file.getRevisions(allocator, self.conflict_index);
-        for (revisions) |revision| {
-            try self.renderRevision(file, revision, box);
+        var group_leader: ?*gtk.CheckButton = null;
+        for (revisions) |*revision| {
+            const revision_widget = try self.renderRevision(file, revision.*, box);
+            if (revision_widget.check_button) |check_button| {
+                if (group_leader) |leader| {
+                    gtk.CheckButton.setGroup(check_button, leader);
+                } else if (revision_widget.check_button) |cb| {
+                    group_leader = cb;
+                }
+
+                const toggle_value = try allocator.create(ToggleValue);
+                toggle_value.* = ToggleValue{
+                    .revision = @constCast(revision),
+                    .self = self,
+                };
+                _ = gtk.CheckButton.signals.toggled.connect(
+                    check_button,
+                    ?*anyopaque,
+                    &onToggleRadio,
+                    @constCast(toggle_value),
+                    .{},
+                );
+            }
         }
     }
 
-    fn renderRevision(self: *RevisionsView, file: parser.ParsedFile, revision: parser.Revision, parent: *gtk.Box) !void {
+    pub fn onRevisionSelected(self: *RevisionsView, comptime callback: *const fn (u32, []u8) void) !void {
+        try self.callbacks.append(self.arena.allocator(), callback);
+    }
+
+    const ToggleValue = struct {
+        revision: *parser.Revision,
+        self: *RevisionsView,
+    };
+    fn onToggleRadio(button: *gtk.CheckButton, commit_id_ptr: ?*anyopaque) callconv(.c) void {
+        if (button.getActive() == 0) {
+            return;
+        }
+
+        if (commit_id_ptr) |ptr| {
+            const value: *ToggleValue = @ptrCast(@alignCast(ptr));
+            std.log.info("Revision {s} activated", .{value.revision.commitID});
+            for (value.self.callbacks.items) |callback| {
+                callback(value.self.conflict_index, @constCast(value.revision.commitID));
+            }
+        } else {
+            std.log.err("Conflict pointer is null", .{});
+        }
+    }
+
+    fn renderRevision(self: *RevisionsView, file: parser.ParsedFile, revision: parser.Revision, parent: *gtk.Box) !RevisionWidget {
         const allocator = self.arena.allocator();
         // code view
         const buffer = gtksource.Buffer.new(null);
@@ -256,8 +317,10 @@ pub const RevisionsView = struct {
         const view = createCodeView(buffer);
 
         // revision widget
-        const rev_widget: RevisionWidget = .new(parent, view.as(gtk.Widget));
+        const rev_widget: RevisionWidget = .new(parent, view.as(gtk.Widget), .{ .is_radio = true });
         try rev_widget.setRevision(allocator, revision);
+
+        return rev_widget;
     }
 
     pub fn deinit(self: RevisionsView) void {

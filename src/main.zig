@@ -112,7 +112,11 @@ fn onConflictSelected(conflict_index: u32) void {
     revisions_view = view;
     if (file) |f| {
         view.render(f, revisions_box) catch unreachable;
+        view.onRevisionSelected(&onRevisionSelected) catch unreachable;
     }
+}
+fn onRevisionSelected(conflict_index: u32, commitID: []const u8) void {
+    std.log.info("onRevisionSelected: {s}, {d}", .{ commitID, conflict_index });
 }
 
 fn closeWindow(_: *gtk.Button, window: *gtk.ApplicationWindow) callconv(.c) void {
@@ -126,7 +130,7 @@ fn buildUI(window: *gtk.Window) void {
 
     // base column
     base_box = gtk.Box.new(.vertical, 5);
-    base_revision_widget = ui.RevisionWidget.new(base_box, null);
+    base_revision_widget = ui.RevisionWidget.new(base_box, null, .{ .is_radio = false });
     gtk.Widget.addCssClass(base_box.as(gtk.Widget), "base-box");
 
     // revision column
