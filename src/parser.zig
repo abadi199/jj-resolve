@@ -43,6 +43,11 @@ pub fn parse(allocator: mem.Allocator, text: []const u8) !ParsedFile {
 
         // std.debug.print("state: {any}\n", .{state});
         // std.debug.print("marker: {any}\n", .{marker});
+
+        // TODO: need to clean up this state transition logic, some of the state transition
+        // logic are duplicated in a way that I think can be error prone.
+        // I think some of the logic can be extracted into helper function that can then
+        // be reused in multiple places
         switch (state) {
             .no_conflict => {
                 switch (marker) {

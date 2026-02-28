@@ -9,6 +9,9 @@ const parser = @import("parser.zig");
 const ui = @import("ui.zig");
 const output = @import("output.zig");
 
+var file: ?parser.ParsedFile = null;
+const gpa = std.heap.page_allocator;
+
 // Base view state
 var base_box: *gtk.Box = undefined;
 var base_revision_widget: ?ui.RevisionWidget = null;
@@ -27,8 +30,10 @@ pub fn main() void {
     base_buffer = gtksource.Buffer.new(null);
     defer deinit();
 
-    var app = gtk.Application.new("org.gtk.example", .{});
+    var app = gtk.Application.new("org.abadi199.jj-resolve", .{});
+
     defer app.unref();
+    _ = gio.Application.signals.startup.connect(app, ?*anyopaque, &startup, null, .{});
     _ = gio.Application.signals.activate.connect(app, ?*anyopaque, &activate, null, .{});
     const status = gio.Application.run(app.as(gio.Application), @intCast(std.os.argv.len), std.os.argv.ptr);
     std.process.exit(@intCast(status));
@@ -52,33 +57,51 @@ fn deinit() void {
     }
 }
 
-fn activate(app: *gtk.Application, _: ?*anyopaque) callconv(.c) void {
-    var provider = gtk.CssProvider.new();
-    provider.loadFromString(@embedFile("style.css"));
+fn startup(app: *gtk.Application, _: ?*anyopaque) callconv(.c) void {
+    // file > open
+    const act_open = gio.SimpleAction.new("file_open", null);
+    _ = gio.SimpleAction.signals.activate.connect(act_open, *gtk.Application, &onFileOpen, app, .{});
+    gio.ActionMap.addAction(app.as(gio.ActionMap), act_open.as(gio.Action));
 
-    gtk.StyleContext.addProviderForDisplay(
-        gdk.Display.getDefault().?,
-        provider.as(gtk.StyleProvider),
-        gtk.STYLE_PROVIDER_PRIORITY_APPLICATION,
-    );
+    // file > open
+    const act_quit = gio.SimpleAction.new("file_quit", null);
+    _ = gio.SimpleAction.signals.activate.connect(act_quit, *gtk.Application, &onFileQuit, app, .{});
+    gio.ActionMap.addAction(app.as(gio.ActionMap), act_quit.as(gio.Action));
 
-    var window = gtk.ApplicationWindow.new(app);
-    gtk.Window.setTitle(window.as(gtk.Window), "Window");
-    gtk.Window.setDefaultSize(window.as(gtk.Window), 800, 600);
-    // gtk.Window.maximize(window.as(gtk.Window));
+    const file_menu = gio.Menu.new();
+    defer file_menu.unref();
+    gio.Menu.append(file_menu, "Open", "app.file_open");
+    gio.Menu.append(file_menu, "Quit", "app.file_quit");
 
-    // gtk.Window.setChild(window.as(gtk.Window), scrolled_window.as(gtk.Widget));
-    buildUI(window.as(gtk.Window));
+    const file_item = gio.MenuItem.new("_File", null);
+    defer file_item.unref();
+    gio.MenuItem.setSubmenu(file_item, file_menu.as(gio.MenuModel));
 
-    gtk.Widget.show(window.as(gtk.Widget));
+    const menu_bar = gio.Menu.new();
+    defer menu_bar.unref();
 
-    // load file
-    const f = openFile(
-        "./example/test3.txt",
-    ) catch |err| {
-        std.log.err("error: {}", .{err});
+    gio.Menu.appendItem(menu_bar, file_item);
+    app.setMenubar(menu_bar.as(gio.MenuModel));
+}
+fn onFileOpen(_: *gio.SimpleAction, _: ?*glib.Variant, app: *gtk.Application) callconv(.c) void {
+    const window = app.getActiveWindow();
+    std.log.debug("file open", .{});
+    const dialog = gtk.FileDialog.new();
+    dialog.setTitle("Select a file");
+    // dialog.open(window, null, &onOpenReady, null);
+    dialog.open(window, null, @ptrCast(&onOpenReady), null);
+}
+
+fn onOpenReady(dialog: *gtk.FileDialog, res: *gio.AsyncResult, _: ?*anyopaque) callconv(.c) void {
+    const gio_file = gtk.FileDialog.openFinish(dialog, res, null) orelse {
+        std.debug.print("File dialog was cancelled\n", .{});
         return;
     };
+    defer gio_file.unref();
+
+    const path = gio.File.getPath(gio_file) orelse "(no path)";
+    std.debug.print("Selected file: {s}\n", .{path});
+    var f = openFile(std.mem.span(path)) catch @panic("Failed to open file");
     file = f;
 
     if (base_revision_widget) |widget| {
@@ -110,6 +133,72 @@ fn activate(app: *gtk.Application, _: ?*anyopaque) callconv(.c) void {
     oview.* = ui.OutputView.new(gpa, f) catch @panic("Failed to create OutputView");
     output_view = oview;
     oview.render(output_box) catch @panic("Failed to render output_view");
+}
+
+fn onFileQuit(_: *gio.SimpleAction, _: ?*glib.Variant, app: *gtk.Application) callconv(.c) void {
+    std.log.debug("file quit", .{});
+    gio.Application.quit(app.as(gio.Application));
+}
+
+fn activate(app: *gtk.Application, _: ?*anyopaque) callconv(.c) void {
+    var provider = gtk.CssProvider.new();
+    provider.loadFromString(@embedFile("style.css"));
+
+    gtk.StyleContext.addProviderForDisplay(
+        gdk.Display.getDefault().?,
+        provider.as(gtk.StyleProvider),
+        gtk.STYLE_PROVIDER_PRIORITY_APPLICATION,
+    );
+
+    var window = gtk.ApplicationWindow.new(app);
+    gtk.Window.setTitle(window.as(gtk.Window), "Window");
+    gtk.Window.setDefaultSize(window.as(gtk.Window), 800, 600);
+    window.setShowMenubar(1);
+    // gtk.Window.maximize(window.as(gtk.Window));
+
+    // gtk.Window.setChild(window.as(gtk.Window), scrolled_window.as(gtk.Widget));
+    buildUI(window.as(gtk.Window));
+
+    gtk.Widget.show(window.as(gtk.Widget));
+
+    // load file
+    // const f = openFile(
+    //     "./example/test3.txt",
+    // ) catch |err| {
+    //     std.log.err("error: {}", .{err});
+    //     return;
+    // };
+    // file = f;
+
+    // if (base_revision_widget) |widget| {
+    //     const base_revision = f.getBaseRevision();
+    //     if (base_revision) |rev| {
+    //         widget.setRevision(gpa, rev) catch {};
+    //     }
+    // }
+
+    // const base_content = f.getBase(gpa) catch |err| {
+    //     std.log.err("Failed to get base content: {}", .{err});
+    //     return;
+    // };
+    // const text = gpa.dupeZ(u8, base_content) catch |err| {
+    //     std.log.err("Failed to get base content: {}", .{err});
+    //     return;
+    // };
+    // gtk.TextBuffer.setText(base_buffer.as(gtk.TextBuffer), text.ptr, -1);
+
+    // // create base view
+    // const view = gpa.create(ui.BaseView) catch unreachable;
+    // view.* = ui.BaseView.new(gpa);
+    // base_view = view;
+    // view.render(f, base_box) catch @panic("Failed to render base");
+    // view.onConflictSelected(&onConflictSelected) catch @panic("Failed to register onConflictSelected callback");
+
+    // // create output view
+    // const oview = gpa.create(ui.OutputView) catch unreachable;
+    // oview.* = ui.OutputView.new(gpa, f) catch @panic("Failed to create OutputView");
+    // output_view = oview;
+    // oview.render(output_box) catch @panic("Failed to render output_view");
 }
 
 fn onConflictSelected(conflict_index: u32) void {
@@ -147,12 +236,10 @@ fn buildUI(window: *gtk.Window) void {
 
     // revision column
     revisions_box = gtk.Box.new(.vertical, 5);
-    // _ = ui.RevisionWidget.new(revisions_box, null);
     gtk.Widget.addCssClass(revisions_box.as(gtk.Widget), "revisions-box");
 
     // output column
     output_box = gtk.Box.new(.vertical, 5);
-    // _ = ui.RevisionWidget.new(right_box, null);
     gtk.Widget.addCssClass(output_box.as(gtk.Widget), "output-box");
 
     hbox.append(base_box.as(gtk.Widget));
@@ -161,9 +248,6 @@ fn buildUI(window: *gtk.Window) void {
 
     gtk.Window.setChild(window, hbox.as(gtk.Widget));
 }
-
-var file: ?parser.ParsedFile = null;
-const gpa = std.heap.page_allocator;
 
 fn openFile(filename: []const u8) !parser.ParsedFile {
     const data = try std.fs.cwd().readFileAlloc(gpa, filename, 10 * 1024 * 1024);
