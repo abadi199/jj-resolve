@@ -74,8 +74,9 @@ fn activate(app: *gtk.Application, _: ?*anyopaque) callconv(.c) void {
 
     // load file
     const f = openFile(
-        "./example/test1.ts",
-    ) catch {
+        "./example/test3.txt",
+    ) catch |err| {
+        std.log.err("error: {}", .{err});
         return;
     };
     file = f;

@@ -194,7 +194,20 @@ pub fn parse(allocator: mem.Allocator, text: []const u8) !ParsedFile {
                         temp_conflict.?.conflict_markers = try temp_conflict_markers.toOwnedSlice(allocator);
                         try temp_segments.append(allocator, .{ .conflict = temp_conflict.? });
                     },
-                    .diff => {},
+                    .diff => {
+                        const snapshot = try snapshot_parser.toSnapshot(allocator);
+                        try temp_conflict_markers.append(
+                            allocator,
+                            ConflictMarker{
+                                .snapshot = snapshot,
+                            },
+                        );
+
+                        // new diff
+                        state = .in_diff;
+                        diff_parser = Diff.Parser.new();
+                        try diff_parser.parse(line);
+                    },
                     .multi_line => {},
                     .snapshot => {},
                     .none => {
@@ -941,11 +954,17 @@ const Snapshot = struct {
     };
 };
 
+pub const RevisionType = enum {
+    diff,
+    snapshot,
+};
+
 // a.k.a Commit
 pub const Revision = struct {
     changeID: []const u8,
     commitID: []const u8,
     description: []const u8,
+    type: RevisionType,
 
     pub fn eql(self: Revision, b: Revision) bool {
         return mem.eql(u8, self.changeID, b.changeID) and
@@ -988,6 +1007,7 @@ pub const Revision = struct {
             .changeID = changeID,
             .commitID = commitID,
             .description = description,
+            .type = .diff,
         };
     }
 
@@ -1013,6 +1033,7 @@ pub const Revision = struct {
             .changeID = changeID,
             .commitID = commitID,
             .description = description,
+            .type = .diff,
         };
     }
 
@@ -1033,6 +1054,7 @@ pub const Revision = struct {
             .changeID = changeID,
             .commitID = commitID,
             .description = description,
+            .type = .snapshot,
         };
     }
 };

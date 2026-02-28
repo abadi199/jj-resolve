@@ -11,6 +11,7 @@ pub const RevisionWidget = struct {
     widget: *gtk.Widget,
     change_label: *gtk.Label,
     commit_label: *gtk.Label,
+    type_label: *gtk.Label,
     desc_label: *gtk.Label,
     content: ?*gtk.Widget,
     content_box: *gtk.Box,
@@ -47,9 +48,19 @@ pub const RevisionWidget = struct {
         desc_box.append(desc.as(gtk.Widget));
         desc_box.append(desc_label.as(gtk.Widget));
 
+        // type label
+        const type_box = gtk.Box.new(.horizontal, 0);
+        const type_label = gtk.Label.new("Type: ");
+        const type_value = gtk.Label.new(null);
+        gtk.Widget.setHalign(type_value.as(gtk.Widget), .start);
+        gtk.Widget.setHexpand(type_value.as(gtk.Widget), 1);
+        type_box.append(type_label.as(gtk.Widget));
+        type_box.append(type_value.as(gtk.Widget));
+
         // header box
         var header_box = gtk.Box.new(.vertical, 0);
         gtk.Widget.addCssClass(header_box.as(gtk.Widget), "revision-header-box");
+
         var hbox = gtk.Box.new(.horizontal, 0);
         gtk.Widget.setHexpand(hbox.as(gtk.Widget), 1);
 
@@ -57,6 +68,7 @@ pub const RevisionWidget = struct {
         hbox.append(commit_box.as(gtk.Widget));
 
         header_box.append(hbox.as(gtk.Widget));
+        header_box.append(type_box.as(gtk.Widget));
         header_box.append(desc_box.as(gtk.Widget));
 
         var content_box = gtk.Box.new(.vertical, 0);
@@ -84,6 +96,7 @@ pub const RevisionWidget = struct {
         return @This(){
             .widget = frame.as(gtk.Widget),
             .change_label = change_label,
+            .type_label = type_value,
             .commit_label = commit_label,
             .desc_label = desc_label,
             .content = content,
@@ -95,8 +108,16 @@ pub const RevisionWidget = struct {
     pub fn setRevision(self: @This(), allocator: std.mem.Allocator, revision: parser.Revision) !void {
         const label_text = try allocator.dupeZ(u8, revision.changeID);
         self.change_label.setLabel(label_text);
+
         const commit_text = try allocator.dupeZ(u8, revision.commitID);
         self.commit_label.setLabel(commit_text);
+
+        const type_text = switch (revision.type) {
+            .diff => "diff",
+            .snapshot => "snapshot",
+        };
+        self.type_label.setLabel(type_text);
+
         const desc_text = try allocator.dupeZ(u8, revision.description);
         self.desc_label.setLabel(desc_text);
     }
