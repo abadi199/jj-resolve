@@ -25,6 +25,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("gio", gobject.module("gio2"));
     exe.root_module.addImport("gobject", gobject.module("gobject2"));
     exe.root_module.addImport("gtksource", gobject.module("gtksource5"));
+    exe.dead_strip_dylibs = true;
 
     b.installArtifact(exe);
 
