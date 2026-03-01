@@ -15,7 +15,7 @@ const State = enum {
     end_conflict,
 };
 
-pub fn parse(allocator: mem.Allocator, text: []const u8) !ParsedFile {
+pub fn parse(allocator: mem.Allocator, path: []const u8, text: []const u8) !ParsedFile {
     var state: State = .no_conflict;
 
     // temporary segments
@@ -242,6 +242,7 @@ pub fn parse(allocator: mem.Allocator, text: []const u8) !ParsedFile {
 
     // debugPrintSegments(&segments);
     return ParsedFile{
+        .path = path,
         .segments = try temp_segments.toOwnedSlice(allocator),
     };
 }
@@ -406,6 +407,7 @@ const Marker = enum {
 };
 
 pub const ParsedFile = struct {
+    path: []const u8,
     segments: []const Segment,
 
     pub fn deinit(self: *ParsedFile, allocator: mem.Allocator) void {

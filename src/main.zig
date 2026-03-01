@@ -14,7 +14,6 @@ const gpa = std.heap.page_allocator;
 
 // Base view state
 var base_box: *gtk.Box = undefined;
-var base_revision_widget: ?ui.RevisionWidget = null;
 var base_buffer: *gtksource.Buffer = undefined;
 var base_view: ?*ui.BaseView = null;
 
@@ -58,12 +57,21 @@ fn deinit() void {
 }
 
 fn startup(app: *gtk.Application, _: ?*anyopaque) callconv(.c) void {
+    buildMenu(app);
+}
+
+fn buildMenu(app: *gtk.Application) void {
     // file > open
     const act_open = gio.SimpleAction.new("file_open", null);
     _ = gio.SimpleAction.signals.activate.connect(act_open, *gtk.Application, &onFileOpen, app, .{});
     gio.ActionMap.addAction(app.as(gio.ActionMap), act_open.as(gio.Action));
 
     // file > open
+    const act_save = gio.SimpleAction.new("file_save", null);
+    _ = gio.SimpleAction.signals.activate.connect(act_save, *gtk.Application, &onFileSave, app, .{});
+    gio.ActionMap.addAction(app.as(gio.ActionMap), act_save.as(gio.Action));
+
+    // file > quit
     const act_quit = gio.SimpleAction.new("file_quit", null);
     _ = gio.SimpleAction.signals.activate.connect(act_quit, *gtk.Application, &onFileQuit, app, .{});
     gio.ActionMap.addAction(app.as(gio.ActionMap), act_quit.as(gio.Action));
@@ -71,6 +79,7 @@ fn startup(app: *gtk.Application, _: ?*anyopaque) callconv(.c) void {
     const file_menu = gio.Menu.new();
     defer file_menu.unref();
     gio.Menu.append(file_menu, "Open", "app.file_open");
+    gio.Menu.append(file_menu, "Save", "app.file_save");
     gio.Menu.append(file_menu, "Quit", "app.file_quit");
 
     const file_item = gio.MenuItem.new("_File", null);
@@ -83,6 +92,7 @@ fn startup(app: *gtk.Application, _: ?*anyopaque) callconv(.c) void {
     gio.Menu.appendItem(menu_bar, file_item);
     app.setMenubar(menu_bar.as(gio.MenuModel));
 }
+
 fn onFileOpen(_: *gio.SimpleAction, _: ?*glib.Variant, app: *gtk.Application) callconv(.c) void {
     const window = app.getActiveWindow();
     std.log.debug("file open", .{});
@@ -104,11 +114,14 @@ fn onOpenReady(dialog: *gtk.FileDialog, res: *gio.AsyncResult, _: ?*anyopaque) c
     var f = openFile(std.mem.span(path)) catch @panic("Failed to open file");
     file = f;
 
-    if (base_revision_widget) |widget| {
-        const base_revision = f.getBaseRevision();
-        if (base_revision) |rev| {
-            widget.setRevision(gpa, rev) catch {};
-        }
+    ui.removeAllChildren(base_box);
+    ui.removeAllChildren(revisions_box);
+    ui.removeAllChildren(output_box);
+
+    var base_revision_widget = ui.RevisionWidget.new(base_box, null, .{ .is_radio = false });
+    const base_revision = f.getBaseRevision();
+    if (base_revision) |rev| {
+        base_revision_widget.setRevision(gpa, rev) catch {};
     }
 
     const base_content = f.getBase(gpa) catch |err| {
@@ -133,6 +146,19 @@ fn onOpenReady(dialog: *gtk.FileDialog, res: *gio.AsyncResult, _: ?*anyopaque) c
     oview.* = ui.OutputView.new(gpa, f) catch @panic("Failed to create OutputView");
     output_view = oview;
     oview.render(output_box) catch @panic("Failed to render output_view");
+}
+
+fn onFileSave(_: *gio.SimpleAction, _: ?*glib.Variant, _: *gtk.Application) callconv(.c) void {
+    if (file) |f| {
+        if (output_view) |oview| {
+            const path = f.path;
+            const content = oview.output_file.toContent(gpa) catch @panic("Failed calling OutputFile.toContent");
+            std.fs.cwd().writeFile(.{
+                .data = content,
+                .sub_path = path,
+            }) catch @panic("Failed saving file");
+        }
+    }
 }
 
 fn onFileQuit(_: *gio.SimpleAction, _: ?*glib.Variant, app: *gtk.Application) callconv(.c) void {
@@ -231,7 +257,6 @@ fn buildUI(window: *gtk.Window) void {
 
     // base column
     base_box = gtk.Box.new(.vertical, 5);
-    base_revision_widget = ui.RevisionWidget.new(base_box, null, .{ .is_radio = false });
     gtk.Widget.addCssClass(base_box.as(gtk.Widget), "base-box");
 
     // revision column
@@ -251,5 +276,5 @@ fn buildUI(window: *gtk.Window) void {
 
 fn openFile(filename: []const u8) !parser.ParsedFile {
     const data = try std.fs.cwd().readFileAlloc(gpa, filename, 10 * 1024 * 1024);
-    return try parser.parse(gpa, data);
+    return try parser.parse(gpa, filename, data);
 }

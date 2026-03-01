@@ -34,6 +34,27 @@ pub const OutputFile = struct {
             .segments = try list.toOwnedSlice(allocator),
         };
     }
+
+    pub fn deinit(self: OutputFile, allocator: std.mem.Allocator) void {
+        allocator.free(self.segments);
+    }
+
+    pub fn toContent(self: OutputFile, allocator: std.mem.Allocator) ![]const u8 {
+        var stringBuffer = std.ArrayList(u8).empty;
+        defer stringBuffer.deinit(allocator);
+        for (self.segments) |segment| {
+            switch (segment) {
+                .conflict => |conflict| {
+                    try stringBuffer.appendSlice(allocator, conflict.text);
+                },
+                .no_conflict => |no_conflict| {
+                    try stringBuffer.appendSlice(allocator, no_conflict.text);
+                },
+            }
+        }
+
+        return try stringBuffer.toOwnedSlice(allocator);
+    }
 };
 
 const Segment = union(enum) {
@@ -48,5 +69,5 @@ const NoConflict = struct {
 const Conflict = struct {
     conflict_index: u32,
     total: u32,
-    text: []u8,
+    text: []const u8,
 };

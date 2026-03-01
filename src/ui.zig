@@ -350,17 +350,17 @@ pub const RevisionsView = struct {
 
 pub const OutputView = struct {
     arena: std.heap.ArenaAllocator,
-    output_file: *output.OutputFile,
+    output_file: output.OutputFile,
     buffers: []*gtksource.Buffer,
 
     pub fn new(allocator: std.mem.Allocator, file: parser.ParsedFile) !OutputView {
         var arena = std.heap.ArenaAllocator.init(allocator);
         const arena_allocator = arena.allocator();
-        var output_file = try output.OutputFile.from(arena_allocator, file);
+        const output_file = try output.OutputFile.from(arena_allocator, file);
         std.log.debug("output_file: {}", .{output_file});
         return .{
             .arena = arena,
-            .output_file = &output_file,
+            .output_file = output_file,
             .buffers = &[0]*gtksource.Buffer{},
         };
     }
@@ -421,12 +421,27 @@ pub const OutputView = struct {
         const buffer = self.buffers[conflict_index - 1];
         const text_z = try allocator.dupeZ(u8, content);
         gtk.TextBuffer.setText(buffer.as(gtk.TextBuffer), text_z, -1);
+        for (self.output_file.segments) |*segment| {
+            switch (segment.*) {
+                .conflict => |*conflict| {
+                    if (conflict.conflict_index == conflict_index) {
+                        conflict.text = content;
+                    }
+                },
+                .no_conflict => {},
+            }
+        }
+    }
+
+    pub fn deinit(self: OutputView) void {
+        self.output_file.deinit(self.arena.allocator());
+        self.arena.deinit();
     }
 };
 
 // Helpers
 
-fn removeAllChildren(box: *gtk.Box) void {
+pub fn removeAllChildren(box: *gtk.Box) void {
     while (gtk.Widget.getFirstChild(box.as(gtk.Widget))) |child| {
         box.remove(child);
     }
