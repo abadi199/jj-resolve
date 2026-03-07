@@ -1,4 +1,4 @@
-const std = @import("std");
+onst std = @import("std");
 const glib = @import("glib");
 const gobject = @import("gobject");
 const gio = @import("gio");
@@ -61,16 +61,19 @@ fn buildMenu(app: *gtk.Application) void {
     const act_open = gio.SimpleAction.new("file_open", null);
     _ = gio.SimpleAction.signals.activate.connect(act_open, *gtk.Application, &onFileOpen, app, .{});
     gio.ActionMap.addAction(app.as(gio.ActionMap), act_open.as(gio.Action));
+    app.setAccelsForAction("app.file_open", @ptrCast(&[_]?[*:0]const u8{ "<Primary>o", null }));
 
     // file > open
     const act_save = gio.SimpleAction.new("file_save", null);
     _ = gio.SimpleAction.signals.activate.connect(act_save, *gtk.Application, &onFileSave, app, .{});
     gio.ActionMap.addAction(app.as(gio.ActionMap), act_save.as(gio.Action));
+    app.setAccelsForAction("app.file_save", @ptrCast(&[_]?[*:0]const u8{ "<Primary>s", null }));
 
     // file > quit
     const act_quit = gio.SimpleAction.new("file_quit", null);
     _ = gio.SimpleAction.signals.activate.connect(act_quit, *gtk.Application, &onFileQuit, app, .{});
     gio.ActionMap.addAction(app.as(gio.ActionMap), act_quit.as(gio.Action));
+    app.setAccelsForAction("app.file_quit", @ptrCast(&[_]?[*:0]const u8{ "<Primary>q", null }));
 
     const file_menu = gio.Menu.new();
     defer file_menu.unref();
@@ -151,12 +154,12 @@ fn loadFile(f: parser.ParsedFile) void {
 fn onFileSave(_: *gio.SimpleAction, _: ?*glib.Variant, _: *gtk.Application) callconv(.c) void {
     if (file) |f| {
         if (output_view) |oview| {
-            const path = f.path;
+            const path = std.mem.replaceOwned(u8, gpa, f.path, "/example/", "/output/") catch @panic("Failed createing output file");
             const content = oview.output_file.toContent(gpa) catch @panic("Failed calling OutputFile.toContent");
-            std.fs.cwd().writeFile(.{
-                .data = content,
-                .sub_path = path,
-            }) catch @panic("Failed saving file");
+            const cwd = std.fs.cwd();
+            const output_file = cwd.createFile(path, .{}) catch @panic("Failed to create file");
+            defer output_file.close();
+            _ = output_file.write(content) catch @panic("Failed saving file");
         }
     }
 }

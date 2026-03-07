@@ -382,10 +382,8 @@ pub const OutputView = struct {
         for (self.output_file.segments) |segment| {
             switch (segment) {
                 .no_conflict => |no_conflict| {
-                    std.log.debug("no_conflict: {s}", .{no_conflict.text});
                     var buffer = gtksource.Buffer.new(null);
                     const text = try allocator.dupeZ(u8, no_conflict.text);
-                    std.log.debug("text:{s}", .{no_conflict.text});
                     gtk.TextBuffer.setText(buffer.as(gtk.TextBuffer), text, -1);
                     const view = createCodeView(buffer);
                     gtk.TextView.setEditable(view.as(gtk.TextView), 1);

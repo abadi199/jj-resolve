@@ -45,6 +45,7 @@ pub const OutputFile = struct {
         for (self.segments) |segment| {
             switch (segment) {
                 .conflict => |conflict| {
+                    try stringBuffer.append(allocator, '\n');
                     try stringBuffer.appendSlice(allocator, conflict.text);
                 },
                 .no_conflict => |no_conflict| {
