@@ -14,7 +14,6 @@ const gpa = std.heap.page_allocator;
 
 // Base view state
 var base_box: *gtk.Box = undefined;
-var base_buffer: *gtksource.Buffer = undefined;
 var base_view: ?*ui.BaseView = null;
 
 // Revisions view state
@@ -26,7 +25,6 @@ var output_box: *gtk.Box = undefined;
 var output_view: ?*ui.OutputView = null;
 
 pub fn main() void {
-    base_buffer = gtksource.Buffer.new(null);
     defer deinit();
 
     var app = gtk.Application.new("org.abadi199.jj-resolve", .{});
@@ -34,7 +32,7 @@ pub fn main() void {
     defer app.unref();
     _ = gio.Application.signals.startup.connect(app, ?*anyopaque, &startup, null, .{});
     _ = gio.Application.signals.activate.connect(app, ?*anyopaque, &activate, null, .{});
-    const status = gio.Application.run(app.as(gio.Application), @intCast(std.os.argv.len), std.os.argv.ptr);
+    const status = gio.Application.run(app.as(gio.Application), 0, null);
     std.process.exit(@intCast(status));
 }
 
@@ -42,8 +40,6 @@ fn deinit() void {
     if (file) |f| {
         f.deinit(gpa);
     }
-
-    base_buffer.unref();
 
     if (base_view) |v| {
         v.deinit();
@@ -111,9 +107,12 @@ fn onOpenReady(dialog: *gtk.FileDialog, res: *gio.AsyncResult, _: ?*anyopaque) c
 
     const path = gio.File.getPath(gio_file) orelse "(no path)";
     std.debug.print("Selected file: {s}\n", .{path});
-    var f = openFile(std.mem.span(path)) catch @panic("Failed to open file");
+    const f = openFile(std.mem.span(path)) catch @panic("Failed to open file");
     file = f;
+    loadFile(f);
+}
 
+fn loadFile(f: parser.ParsedFile) void {
     ui.removeAllChildren(base_box);
     ui.removeAllChildren(revisions_box);
     ui.removeAllChildren(output_box);
@@ -132,6 +131,7 @@ fn onOpenReady(dialog: *gtk.FileDialog, res: *gio.AsyncResult, _: ?*anyopaque) c
         std.log.err("Failed to get base content: {}", .{err});
         return;
     };
+    const base_buffer = gtksource.Buffer.new(null);
     gtk.TextBuffer.setText(base_buffer.as(gtk.TextBuffer), text.ptr, -1);
 
     // create base view
@@ -186,6 +186,18 @@ fn activate(app: *gtk.Application, _: ?*anyopaque) callconv(.c) void {
     buildUI(window.as(gtk.Window));
 
     gtk.Widget.show(window.as(gtk.Widget));
+
+    const args = std.process.argsAlloc(gpa) catch @panic("Failed reading cli args");
+    defer std.process.argsFree(gpa, args);
+
+    if (args.len == 2) {
+        const f = openFile(args[1]) catch |err| {
+            std.log.err("error: {}", .{err});
+            return;
+        };
+        file = f;
+        loadFile(f);
+    }
 
     // load file
     // const f = openFile(
