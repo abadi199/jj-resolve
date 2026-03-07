@@ -6,11 +6,12 @@
     /*background-color: #0000ff;*/
 }
 .revision-header-box {
-    background-color: blue;
+    background-color: #000099;
+    color: white;
 }
 
 .revision-frame {
-    border: 2px solid blue;
+    border: 2px solid #000099;
     border-radius: 0;
     padding: 0;
 }
@@ -21,11 +22,13 @@
 
 .conflict-radio {
     background-color: #990000;
+    color: white;
     padding: 2px;
     border-radius: 0;
 }
 .conflict-frame {
     border: 1px solid #990000;
+    white: white;
     border-radius: 0;
     padding: 0;
 }
