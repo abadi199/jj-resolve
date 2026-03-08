@@ -365,6 +365,18 @@ pub const OutputView = struct {
         };
     }
 
+    pub fn toContent(self: *OutputView) ![]const u8 {
+        const allocator = self.arena.allocator();
+        var content = std.ArrayList(u8).empty;
+        for (self.buffers) |buffer| {
+            const text = try getBufferText(allocator, buffer.as(gtk.TextBuffer));
+            try content.appendSlice(allocator, text);
+            try content.append(allocator, '\n');
+        }
+
+        return content.toOwnedSlice(allocator);
+    }
+
     pub fn render(self: *OutputView, parent: *gtk.Box) !void {
         const allocator = self.arena.allocator();
         var frame = gtk.Frame.new("Output");
@@ -383,6 +395,7 @@ pub const OutputView = struct {
             switch (segment) {
                 .no_conflict => |no_conflict| {
                     var buffer = gtksource.Buffer.new(null);
+                    try buffers.append(allocator, buffer);
                     const text = try allocator.dupeZ(u8, no_conflict.text);
                     gtk.TextBuffer.setText(buffer.as(gtk.TextBuffer), text, -1);
                     const view = createCodeView(buffer);
@@ -416,14 +429,14 @@ pub const OutputView = struct {
     }
 
     pub fn setContent(self: *OutputView, allocator: std.mem.Allocator, conflict_index: u32, content: []const u8) !void {
-        const buffer = self.buffers[conflict_index - 1];
-        const text_z = try allocator.dupeZ(u8, content);
-        gtk.TextBuffer.setText(buffer.as(gtk.TextBuffer), text_z, -1);
-        for (self.output_file.segments) |*segment| {
+        for (self.output_file.segments, 0..) |*segment, index| {
             switch (segment.*) {
                 .conflict => |*conflict| {
                     if (conflict.conflict_index == conflict_index) {
                         conflict.text = content;
+                        const buffer = self.buffers[index];
+                        const text_z = try allocator.dupeZ(u8, content);
+                        gtk.TextBuffer.setText(buffer.as(gtk.TextBuffer), text_z, -1);
                     }
                 },
                 .no_conflict => {},
@@ -466,4 +479,16 @@ pub fn createCodeView(buffer: *gtksource.Buffer) *gtksource.View {
     gtk.TextView.setCursorVisible(source_view.as(gtk.TextView), 0);
 
     return source_view;
+}
+
+fn getBufferText(allocator: std.mem.Allocator, buffer: *gtk.TextBuffer) ![]const u8 {
+    var start_iter: gtk.TextIter = undefined;
+    var end_iter: gtk.TextIter = undefined;
+    buffer.getStartIter(&start_iter);
+    buffer.getEndIter(&end_iter);
+
+    const text = buffer.getText(&start_iter, &end_iter, 0);
+    defer glib.free(text);
+
+    return try allocator.dupe(u8, std.mem.span(text));
 }

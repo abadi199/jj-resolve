@@ -1,4 +1,4 @@
-onst std = @import("std");
+const std = @import("std");
 const glib = @import("glib");
 const gobject = @import("gobject");
 const gio = @import("gio");
@@ -154,8 +154,10 @@ fn loadFile(f: parser.ParsedFile) void {
 fn onFileSave(_: *gio.SimpleAction, _: ?*glib.Variant, _: *gtk.Application) callconv(.c) void {
     if (file) |f| {
         if (output_view) |oview| {
-            const path = std.mem.replaceOwned(u8, gpa, f.path, "/example/", "/output/") catch @panic("Failed createing output file");
-            const content = oview.output_file.toContent(gpa) catch @panic("Failed calling OutputFile.toContent");
+            // const path = std.mem.replaceOwned(u8, gpa, f.path, "/example/", "/output/") catch @panic("Failed createing output file");
+            const path = f.path;
+            const content = oview.toContent() catch @panic("Failed calling OutputFile.toContent");
+            std.log.debug("{s}", .{content});
             const cwd = std.fs.cwd();
             const output_file = cwd.createFile(path, .{}) catch @panic("Failed to create file");
             defer output_file.close();

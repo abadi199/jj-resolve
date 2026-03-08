@@ -37,6 +37,7 @@ pub fn parse(allocator: mem.Allocator, path: []const u8, text: []const u8) !Pars
     var iter = mem.splitSequence(u8, text, "\n");
     var i: usize = 0;
     while (iter.next()) |line| {
+        debugPrintSegments(&temp_segments);
         defer i += 1;
         // std.debug.print("############################ line {d}:\n{s}\n", .{ i, line });
         const marker = Marker.detect(line);
@@ -743,6 +744,19 @@ pub const Conflict = struct {
             .conflict_markers = &[0]ConflictMarker{},
         };
     }
+
+    fn debugPrint(self: Conflict) void {
+        for (self.conflict_markers) |marker| {
+            switch (marker) {
+                .diff => |diff| {
+                    diff.debugPrint();
+                },
+                .snapshot => |snapshot| {
+                    snapshot.debugPrint();
+                },
+            }
+        }
+    }
 };
 
 test "Conflict.parse" {
@@ -801,7 +815,11 @@ const Diff = struct {
             }
 
             if (buffer.items.len > 0) _ = buffer.pop();
-            return try buffer.toOwnedSlice(allocator);
+            const content = try buffer.toOwnedSlice(allocator);
+            std.debug.print("%%%%%%%% DIFF CONTENT\n", .{});
+            std.debug.print("{s}", .{content});
+            std.debug.print("%%%%%%%% END OF CONTENT\n", .{});
+            return content;
         } else {
             return "";
         }
@@ -862,6 +880,12 @@ const Diff = struct {
             };
         }
     };
+
+    fn debugPrint(self: Diff) void {
+        std.debug.print("DIFF\n", .{});
+        std.debug.print("revision from:{s}\n", .{self.from.description});
+        std.debug.print("revision to:{s}\n", .{self.to.description});
+    }
 };
 
 test "Diff.Partial.parse" {
@@ -914,12 +938,18 @@ const Snapshot = struct {
 
     fn getContent(self: Snapshot, allocator: mem.Allocator) ![]const u8 {
         var buffer = std.ArrayList(u8).empty;
-        for (self.lines) |line| {
+        for (self.lines, 0..) |line, index| {
             try buffer.appendSlice(allocator, line);
-            try buffer.append(allocator, '\n');
+            if (index + 1 < self.lines.len) {
+                try buffer.append(allocator, '\n');
+            }
         }
 
-        return try buffer.toOwnedSlice(allocator);
+        const content = try buffer.toOwnedSlice(allocator);
+        std.debug.print("+++++++ SNAPSHOT CONTENT\n", .{});
+        std.debug.print("{s}", .{content});
+        std.debug.print("+++++++ END OF CONTENT\n", .{});
+        return content;
     }
 
     const Parser = struct {
@@ -959,6 +989,17 @@ const Snapshot = struct {
             };
         }
     };
+
+    fn debugPrint(self: Snapshot) void {
+        std.debug.print("+++++++++ SNAPSHOT\n", .{});
+        std.debug.print("revision: {s}\n", .{self.commit.description});
+        std.debug.print("content:\n", .{});
+        for (self.lines) |line| {
+            std.debug.print("{s}\n", .{line});
+        }
+
+        std.debug.print("++++++++++ END OF SNAPSHOT\n", .{});
+    }
 };
 
 pub const RevisionType = enum {
@@ -1080,6 +1121,7 @@ fn debugPrintSegments(segments: *const std.ArrayList(Segment)) void {
     for (segments.items, 0..) |segment, i| {
         switch (segment) {
             .no_conflict => |no_conflict| {
+                std.debug.print("NO CONFLICT\n", .{});
                 std.debug.print("  [{d}] text lines={d}\n", .{ i, no_conflict.lines.len });
                 for (no_conflict.lines, 0..) |line, j| {
                     std.debug.print("    [{d}] {s}\n", .{ j, line });
@@ -1087,9 +1129,10 @@ fn debugPrintSegments(segments: *const std.ArrayList(Segment)) void {
             },
             .conflict => |conflict| {
                 std.debug.print(
-                    "  [{d}] conflict {d} of {d}, markers={d}\n",
+                    "CONFLICT [{d}] {d} of {d}, markers={d}\n",
                     .{ i, conflict.index, conflict.total, conflict.conflict_markers.len },
                 );
+                conflict.debugPrint();
             },
         }
     }
