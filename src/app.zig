@@ -12,6 +12,8 @@ const ui = @import("ui.zig");
 var file: ?parser.ParsedFile = null;
 const gpa = std.heap.page_allocator;
 
+// file list
+
 // Base view state
 var base_box: *gtk.Box = undefined;
 var base_view: ?*ui.BaseView = null;
@@ -71,13 +73,28 @@ pub fn buildUI(app: *gtk.Application, _: ?*anyopaque) callconv(.c) void {
     );
 
     var window = gtk.ApplicationWindow.new(app);
+    gtk.Widget.show(window.as(gtk.Widget));
     gtk.Window.setTitle(window.as(gtk.Window), "Window");
     gtk.Window.setDefaultSize(window.as(gtk.Window), 800, 600);
     window.setShowMenubar(1);
 
-    var hbox = gtk.Box.new(.horizontal, 10);
-    gtk.Widget.setHexpand(hbox.as(gtk.Widget), 1);
-    gtk.Box.setHomogeneous(hbox, 1);
+    const file_pane = gtk.Paned.new(.horizontal);
+    const base_pane = gtk.Paned.new(.horizontal);
+    const revisions_pane = gtk.Paned.new(.horizontal);
+    file_pane.setPosition(150);
+    base_pane.setPosition(216);
+    revisions_pane.setPosition(216);
+
+    gtk.Window.setChild(window.as(gtk.Window), file_pane.as(gtk.Widget));
+
+    const file_list = gtk.Box.new(.horizontal, 0);
+    const label = gtk.Label.new("File list");
+    file_list.append(label.as(gtk.Widget));
+
+    file_pane.setStartChild(file_list.as(gtk.Widget));
+    file_pane.setEndChild(base_pane.as(gtk.Widget));
+
+    gtk.Widget.setHexpand(base_pane.as(gtk.Widget), 1);
 
     // base column
     base_box = gtk.Box.new(.vertical, 5);
@@ -91,13 +108,11 @@ pub fn buildUI(app: *gtk.Application, _: ?*anyopaque) callconv(.c) void {
     output_box = gtk.Box.new(.vertical, 5);
     gtk.Widget.addCssClass(output_box.as(gtk.Widget), "output-box");
 
-    hbox.append(base_box.as(gtk.Widget));
-    hbox.append(revisions_box.as(gtk.Widget));
-    hbox.append(output_box.as(gtk.Widget));
+    base_pane.setStartChild(base_box.as(gtk.Widget));
+    base_pane.setEndChild(revisions_pane.as(gtk.Widget));
 
-    gtk.Window.setChild(window.as(gtk.Window), hbox.as(gtk.Widget));
-
-    gtk.Widget.show(window.as(gtk.Widget));
+    revisions_pane.setStartChild(revisions_box.as(gtk.Widget));
+    revisions_pane.setEndChild(output_box.as(gtk.Widget));
 
     const args = std.process.argsAlloc(gpa) catch @panic("Failed reading cli args");
     defer std.process.argsFree(gpa, args);
