@@ -1,17 +1,20 @@
 const std = @import("std");
-const jj = @import("jj.zig");
+const gpa = std.heap.page_allocator;
+
+const gdk = @import("gdk");
+const gio = @import("gio");
 const glib = @import("glib");
 const gobject = @import("gobject");
-const gio = @import("gio");
 const gtk = @import("gtk");
-const gdk = @import("gdk");
 const gtksource = @import("gtksource");
-const parser = @import("parser.zig");
+
+const jj = @import("jj.zig");
 const output = @import("output.zig");
+const parser = @import("parser.zig");
 const ui = @import("ui.zig");
 
 var file: ?parser.ParsedFile = null;
-const gpa = std.heap.page_allocator;
+var io: std.Io = undefined;
 
 // file list
 
@@ -115,20 +118,24 @@ pub fn buildUI(app: *gtk.Application, _: ?*anyopaque) callconv(.c) void {
     revisions_pane.setStartChild(revisions_box.as(gtk.Widget));
     revisions_pane.setEndChild(output_box.as(gtk.Widget));
 
-    const args = std.process.argsAlloc(gpa) catch @panic("Failed reading cli args");
-    defer std.process.argsFree(gpa, args);
+    // const args = std.process.argsWithAllocators(gpa) catch @panic("Failed reading cli args");
+    // defer args.deinit(gpa, args);
 
-    if (args.len == 2) {
-        const f = openFile(args[1]) catch |err| {
-            std.log.err("error: {}", .{err});
-            return;
-        };
-        file = f;
-        loadFile(f);
-    }
+    // if (args.len == 2) {
+    //     const f = openFile(args[1]) catch |err| {
+    //         std.log.err("error: {}", .{err});
+    //         return;
+    //     };
+    //     file = f;
+    //     loadFile(f);
+    // }
 
-    const cwd = std.process.getCwdAlloc(gpa) catch @panic("Failed getting cwd");
-    _ = jj.getConflicts(gpa, cwd) catch @panic("Failed getting conflicts");
+    // const cwd = std.process.getCwdAlloc(gpa) catch @panic("Failed getting cwd");
+    // _ = jj.getConflicts(gpa, cwd) catch @panic("Failed getting conflicts");
+}
+
+pub fn init(_io: std.Io) void {
+    io = _io;
 }
 
 pub fn deinit() void {
@@ -171,7 +178,7 @@ fn onOpenReady(dialog: *gtk.FileDialog, res: *gio.AsyncResult, _: ?*anyopaque) c
 }
 
 fn openFile(filename: []const u8) !parser.ParsedFile {
-    const data = try std.fs.cwd().readFileAlloc(gpa, filename, 10 * 1024 * 1024);
+    const data = try std.Io.Dir.cwd().readFileAlloc(io, filename, gpa, .limited(10 * 1024 * 1024));
     return try parser.parse(gpa, filename, data);
 }
 
@@ -218,10 +225,10 @@ fn onFileSave(_: *gio.SimpleAction, _: ?*glib.Variant, _: *gtk.Application) call
             const path = f.path;
             const content = oview.toContent() catch @panic("Failed calling OutputFile.toContent");
             std.log.debug("{s}", .{content});
-            const cwd = std.fs.cwd();
-            const output_file = cwd.createFile(path, .{}) catch @panic("Failed to create file");
-            defer output_file.close();
-            _ = output_file.write(content) catch @panic("Failed saving file");
+            const cwd = std.Io.Dir.cwd();
+            const output_file = cwd.createFile(io, path, .{}) catch @panic("Failed to create file");
+            defer output_file.close(io);
+            _ = output_file.writeStreamingAll(io, content) catch @panic("Failed saving file");
         }
     }
 }

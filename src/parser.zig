@@ -551,8 +551,8 @@ pub const ParsedFile = struct {
     }
 
     pub fn getRevisions(self: ParsedFile, allocator: mem.Allocator, conflict_index: u32) ![]Revision {
-        var revisions: std.ArrayHashMap(Revision, void, Revision.HashContext, false) = .init(allocator);
-        defer revisions.deinit();
+        var revisions: std.array_hash_map.ArrayHashMap(Revision, void, Revision.HashContext, false) = .empty;
+        defer revisions.deinit(allocator);
 
         for (self.segments) |segment| {
             switch (segment) {
@@ -564,10 +564,10 @@ pub const ParsedFile = struct {
                     for (conflict.conflict_markers) |conflict_marker| {
                         switch (conflict_marker) {
                             .diff => |diff| {
-                                try revisions.put(diff.to, {});
+                                try revisions.put(allocator, diff.to, {});
                             },
                             .snapshot => |snapshot| {
-                                try revisions.put(snapshot.commit, {});
+                                try revisions.put(allocator, snapshot.commit, {});
                             },
                         }
                     }

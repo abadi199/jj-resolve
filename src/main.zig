@@ -3,8 +3,11 @@ const app = @import("app.zig");
 const gtk = @import("gtk");
 const gio = @import("gio");
 
-pub fn main() void {
+pub fn main(init: std.process.Init) void {
+    const io = init.io;
+
     defer app.deinit();
+    app.init(io);
 
     var gtkapp = gtk.Application.new("org.abadi199.jj-resolve", .{});
 

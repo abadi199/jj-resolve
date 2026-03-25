@@ -1,15 +1,15 @@
 function before() {
-  console.log("apple");
-  console.log("orange");
+  console.log("APPLE");
+  console.log("ORANGE");
 }
 
 function main() {
   before();
-  console.log("main");
+  console.log("MAIN");
   after();
 }
 
 function after() {
-  console.log("banana");
-  console.log("grape");
+  console.log("BANANA");
+  console.log("GRAPE");
 }

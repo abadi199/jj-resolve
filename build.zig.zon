@@ -25,7 +25,7 @@
     .fingerprint = 0x95e6f8a538aab2a2, // Changing this has security and trust implications.
     // Tracks the earliest Zig version that the package considers to be a
     // supported use case.
-    .minimum_zig_version = "0.15.2",
+    .minimum_zig_version = "0.16.0",
     // This field is optional.
     // Each dependency must either provide a `url` and `hash`, or a `path`.
     // `zig build --fetch` can be used to fetch all dependencies of a package, recursively.
@@ -33,8 +33,8 @@
     // internet connectivity.
     .dependencies = .{
         .gobject = .{
-            .url = "https://github.com/ianprime0509/zig-gobject/releases/download/v0.3.1/bindings-gnome49.tar.zst",
-            .hash = "gobject-0.3.1-Skun7JC5fAFWOaM_zWo3XZAw7wPa6GYKK6U76Yy_Jkvt",
+            .url = "https://github.com/ianprime0509/zig-gobject/releases/download/v0.3.2/bindings-gnome49.tar.zst",
+            .hash = "gobject-0.3.2-Skun7MlWfQEIvvWxmrPstMuGt5xjGf0jvb8glVAMlaLx",
         },
     },
     .paths = .{
