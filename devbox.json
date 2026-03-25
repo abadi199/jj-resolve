@@ -1,0 +1,20 @@
+{
+  "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.17.0/.schema/devbox.schema.json",
+  "packages": [
+    "zig@latest",
+    "gtk4@latest",
+    "libadwaita@latest",
+    "gtksourceview5",
+    "libselinux@latest"
+  ],
+  "env": {
+    "PKG_CONFIG_PATH": "$DEVBOX_PACKAGES_DIR/lib/pkgconfig"
+  },
+  "shell": {
+    "scripts": {
+      "test": [
+        "echo \"Error: no test specified\" && exit 1"
+      ]
+    }
+  }
+}

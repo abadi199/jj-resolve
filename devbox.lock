@@ -1,0 +1,309 @@
+{
+  "lockfile_version": "1",
+  "packages": {
+    "github:NixOS/nixpkgs/nixpkgs-unstable": {
+      "last_modified": "2026-03-23T13:48:00Z",
+      "resolved": "github:NixOS/nixpkgs/fdc7b8f7b30fdbedec91b71ed82f36e1637483ed?lastModified=1774273680&narHash=sha256-a%2B%2BtZ1RQsDb1I0NHrFwdGuRlR5TORvCEUksM459wKUA%3D"
+    },
+    "gtk4@latest": {
+      "last_modified": "2026-03-23T13:48:00Z",
+      "resolved": "github:NixOS/nixpkgs/fdc7b8f7b30fdbedec91b71ed82f36e1637483ed#gtk4",
+      "source": "devbox-search",
+      "version": "4.20.3",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/6b4708rya7ghalshmzkldkpddcg67nj7-gtk4-4.20.3",
+              "default": true
+            },
+            {
+              "name": "dev",
+              "path": "/nix/store/z7cvq54zkyk0labsp6hk6ywm0nnlx20n-gtk4-4.20.3-dev"
+            }
+          ],
+          "store_path": "/nix/store/6b4708rya7ghalshmzkldkpddcg67nj7-gtk4-4.20.3"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/fx6fzpryd4bay55g7lp8sj5c2r580lrc-gtk4-4.20.3",
+              "default": true
+            },
+            {
+              "name": "debug",
+              "path": "/nix/store/i5ykzqwbj9dj1n13rp3mvvrk9zzwci3n-gtk4-4.20.3-debug"
+            },
+            {
+              "name": "dev",
+              "path": "/nix/store/09n3rws2gl27hr3xz6wqqyfwz6vh6hmf-gtk4-4.20.3-dev"
+            },
+            {
+              "name": "devdoc",
+              "path": "/nix/store/5zxjlx7lsnh4m4l1z2vm0j44dn3kc6d6-gtk4-4.20.3-devdoc"
+            }
+          ],
+          "store_path": "/nix/store/fx6fzpryd4bay55g7lp8sj5c2r580lrc-gtk4-4.20.3"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/aivvrcsrnw6s2qbxjrnm2hapd4w1nqwf-gtk4-4.20.3",
+              "default": true
+            },
+            {
+              "name": "dev",
+              "path": "/nix/store/ywryqks9zl6lrkdjygki8m9xslc8l21s-gtk4-4.20.3-dev"
+            }
+          ],
+          "store_path": "/nix/store/aivvrcsrnw6s2qbxjrnm2hapd4w1nqwf-gtk4-4.20.3"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/hjp25ksf3axb4czp7sllvzl1bkpfwsyg-gtk4-4.20.3",
+              "default": true
+            },
+            {
+              "name": "debug",
+              "path": "/nix/store/76b7fmlgbpcvlmffbsjlamkwgyvsfmgl-gtk4-4.20.3-debug"
+            },
+            {
+              "name": "dev",
+              "path": "/nix/store/si8rjwp45fhsjgfl2pirjqgajgkaw8x0-gtk4-4.20.3-dev"
+            },
+            {
+              "name": "devdoc",
+              "path": "/nix/store/m2ahddrsk44r887xwhnz37kr8h0scv21-gtk4-4.20.3-devdoc"
+            }
+          ],
+          "store_path": "/nix/store/hjp25ksf3axb4czp7sllvzl1bkpfwsyg-gtk4-4.20.3"
+        }
+      }
+    },
+    "gtksourceview5": {
+      "resolved": "github:NixOS/nixpkgs/fdc7b8f7b30fdbedec91b71ed82f36e1637483ed?narHash=sha256-a%2B%2BtZ1RQsDb1I0NHrFwdGuRlR5TORvCEUksM459wKUA%3D#gtksourceview5",
+      "source": "nixpkg",
+      "systems": {
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "path": "/nix/store/wb4mh4xp666xjhlwgy5z8hl5n2kbrxx0-gtksourceview-5.18.0",
+              "default": true
+            }
+          ]
+        }
+      }
+    },
+    "libadwaita@latest": {
+      "last_modified": "2026-03-21T07:29:51Z",
+      "resolved": "github:NixOS/nixpkgs/09061f748ee21f68a089cd5d91ec1859cd93d0be#libadwaita",
+      "source": "devbox-search",
+      "version": "1.8.4",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/q54ii2lpbpfw7qj5fqvb319whqgjbbaf-libadwaita-1.8.4",
+              "default": true
+            },
+            {
+              "name": "dev",
+              "path": "/nix/store/kmpi7lffcjw82vzf1vd1ilhqxnj196gk-libadwaita-1.8.4-dev"
+            },
+            {
+              "name": "devdoc",
+              "path": "/nix/store/2qwfzl7fb35gwhxwmqc615nv7b3c4z1n-libadwaita-1.8.4-devdoc"
+            }
+          ],
+          "store_path": "/nix/store/q54ii2lpbpfw7qj5fqvb319whqgjbbaf-libadwaita-1.8.4"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/y0bcgx04hrbm3i0wigyggfkb7y1qg3d4-libadwaita-1.8.4",
+              "default": true
+            },
+            {
+              "name": "devdoc",
+              "path": "/nix/store/ihkarikwvbbqcchyx9kpj4x9q5x17cfw-libadwaita-1.8.4-devdoc"
+            },
+            {
+              "name": "debug",
+              "path": "/nix/store/p3f3m8l4ls7kd23r4fycvcddkicy23x5-libadwaita-1.8.4-debug"
+            },
+            {
+              "name": "dev",
+              "path": "/nix/store/8n78zlq3sr9mk19v3cvfmyif9dv95jb2-libadwaita-1.8.4-dev"
+            }
+          ],
+          "store_path": "/nix/store/y0bcgx04hrbm3i0wigyggfkb7y1qg3d4-libadwaita-1.8.4"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/yqvjqc9k9a7skg3cn2pia6d5qd0ps4kp-libadwaita-1.8.4",
+              "default": true
+            },
+            {
+              "name": "dev",
+              "path": "/nix/store/dbnz3kidy1zx0zzrqxk56vwv3v64m17k-libadwaita-1.8.4-dev"
+            },
+            {
+              "name": "devdoc",
+              "path": "/nix/store/0l4azrjsnmq220ypnlxmny3slif2i2rb-libadwaita-1.8.4-devdoc"
+            }
+          ],
+          "store_path": "/nix/store/yqvjqc9k9a7skg3cn2pia6d5qd0ps4kp-libadwaita-1.8.4"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/l5lxgdqp0j9vbw8gygsq6xanshcpz18y-libadwaita-1.8.4",
+              "default": true
+            },
+            {
+              "name": "debug",
+              "path": "/nix/store/1b1d09g1bvf9v7zwr3d90mvk6a2xdijs-libadwaita-1.8.4-debug"
+            },
+            {
+              "name": "dev",
+              "path": "/nix/store/smlmg6lw2k1yzmr10x86crlpikmljbfc-libadwaita-1.8.4-dev"
+            },
+            {
+              "name": "devdoc",
+              "path": "/nix/store/dnilk8by7c6dvizrczm4hfacmh1agrb8-libadwaita-1.8.4-devdoc"
+            }
+          ],
+          "store_path": "/nix/store/l5lxgdqp0j9vbw8gygsq6xanshcpz18y-libadwaita-1.8.4"
+        }
+      }
+    },
+    "libselinux@latest": {
+      "last_modified": "2026-03-23T13:48:00Z",
+      "resolved": "github:NixOS/nixpkgs/fdc7b8f7b30fdbedec91b71ed82f36e1637483ed#libselinux",
+      "source": "devbox-search",
+      "version": "3.10",
+      "systems": {
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "bin",
+              "path": "/nix/store/99rkam694azj6vdaz2f5b20x6qs7j2n0-libselinux-3.10-bin",
+              "default": true
+            },
+            {
+              "name": "man",
+              "path": "/nix/store/288zg570zz6m8p551dk3bfrskw2di5wq-libselinux-3.10-man",
+              "default": true
+            },
+            {
+              "name": "out",
+              "path": "/nix/store/a8d2fycf1xhjn7rii95q7h2db53halvv-libselinux-3.10"
+            },
+            {
+              "name": "dev",
+              "path": "/nix/store/1bsp2zklqcyvv5ljc7plczb22a6al4is-libselinux-3.10-dev"
+            }
+          ],
+          "store_path": "/nix/store/99rkam694azj6vdaz2f5b20x6qs7j2n0-libselinux-3.10-bin"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "bin",
+              "path": "/nix/store/wcywxk07lq43bkzy1n9sxqrnxv7bna8s-libselinux-3.10-bin",
+              "default": true
+            },
+            {
+              "name": "man",
+              "path": "/nix/store/9pb1cfifhm9w7imm5jnrlysgly8d80k2-libselinux-3.10-man",
+              "default": true
+            },
+            {
+              "name": "out",
+              "path": "/nix/store/30nc3ay283h843z5b3icirqj7brfcr4j-libselinux-3.10"
+            },
+            {
+              "name": "dev",
+              "path": "/nix/store/bvf3wqzmclq27wmh2v37l305cmrrs6lv-libselinux-3.10-dev"
+            }
+          ],
+          "store_path": "/nix/store/wcywxk07lq43bkzy1n9sxqrnxv7bna8s-libselinux-3.10-bin"
+        }
+      }
+    },
+    "zig@latest": {
+      "last_modified": "2026-03-21T07:29:51Z",
+      "resolved": "github:NixOS/nixpkgs/09061f748ee21f68a089cd5d91ec1859cd93d0be#zig",
+      "source": "devbox-search",
+      "version": "0.15.2",
+      "systems": {
+        "aarch64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/wz6i6vmk28c2cj8zala9dsdg5lcdx3ab-zig-0.15.2",
+              "default": true
+            },
+            {
+              "name": "doc",
+              "path": "/nix/store/raxxz0knpay5hyv06d64sg4i01l51f91-zig-0.15.2-doc"
+            }
+          ],
+          "store_path": "/nix/store/wz6i6vmk28c2cj8zala9dsdg5lcdx3ab-zig-0.15.2"
+        },
+        "aarch64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/wwym7yrjgxi9d6fv8w4nph4n27jjyay3-zig-0.15.2",
+              "default": true
+            },
+            {
+              "name": "doc",
+              "path": "/nix/store/w4kgvgkqzld3x1lkl2rjsyg9d9g97mv7-zig-0.15.2-doc"
+            }
+          ],
+          "store_path": "/nix/store/wwym7yrjgxi9d6fv8w4nph4n27jjyay3-zig-0.15.2"
+        },
+        "x86_64-darwin": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/n36a2k2dvjwaix33xc31l97ci11my8la-zig-0.15.2",
+              "default": true
+            },
+            {
+              "name": "doc",
+              "path": "/nix/store/k3pnyflmxirwc9jf2wc6y3f4nl2fl80w-zig-0.15.2-doc"
+            }
+          ],
+          "store_path": "/nix/store/n36a2k2dvjwaix33xc31l97ci11my8la-zig-0.15.2"
+        },
+        "x86_64-linux": {
+          "outputs": [
+            {
+              "name": "out",
+              "path": "/nix/store/9ljn49hx3a2lhha1anl3agivwb3z0ga1-zig-0.15.2",
+              "default": true
+            },
+            {
+              "name": "doc",
+              "path": "/nix/store/kfwsd42yms807bfj6ni3fgrs1zwqp3l7-zig-0.15.2-doc"
+            }
+          ],
+          "store_path": "/nix/store/9ljn49hx3a2lhha1anl3agivwb3z0ga1-zig-0.15.2"
+        }
+      }
+    }
+  }
+}
