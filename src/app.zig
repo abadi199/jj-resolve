@@ -1,4 +1,5 @@
 const std = @import("std");
+const jj = @import("jj.zig");
 const glib = @import("glib");
 const gobject = @import("gobject");
 const gio = @import("gio");
@@ -125,6 +126,9 @@ pub fn buildUI(app: *gtk.Application, _: ?*anyopaque) callconv(.c) void {
         file = f;
         loadFile(f);
     }
+
+    const cwd = std.process.getCwdAlloc(gpa) catch @panic("Failed getting cwd");
+    _ = jj.getConflicts(gpa, cwd) catch @panic("Failed getting conflicts");
 }
 
 pub fn deinit() void {
